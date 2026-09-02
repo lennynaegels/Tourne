@@ -1,0 +1,3473 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Tournée</title>
+<meta name="tournee-version" content="7">
+<meta name="description" content="Carnet de bord pour livreurs indépendants : suivi des courses, du net réel et des provisions.">
+<meta name="theme-color" content="#0A0E15">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tournée">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* ═══════════════════════════════════════════
+   Tournée — thème « nuit »
+   Palette inspirée de l'éclairage urbain :
+   ciel nocturne, ambre sodium, vert signal.
+   ═══════════════════════════════════════════ */
+
+:root{
+  --ink:#0A0E15;
+  --slate:#141A24;
+  --slate-2:#1D2530;
+  --slate-3:#252F3D;
+  --line:#26303D;
+  --sodium:#FFB627;
+  --sodium-dim:#3A2C10;
+  --mint:#3DD68C;
+  --mint-dim:#0F3527;
+  --rose:#FF5D5D;
+  --rose-dim:#3B1A1C;
+  --sky:#5AA9FF;
+  --text:#E9EDF2;
+  --muted:#8A97A6;
+  --faint:#5E6B7A;
+  --r:14px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+html,body{height:100%;margin:0;overscroll-behavior:none}
+
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:'Manrope',system-ui,-apple-system,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+.num,.chrono{font-family:'Barlow Condensed',system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+
+#app{height:100%;position:relative;overflow:hidden}
+
+/* ── Écrans ────────────────────────────── */
+.screen{position:absolute;inset:0;bottom:calc(62px + var(--safe-b));display:none}
+.screen.is-active{display:block}
+.screen--scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(var(--safe-t) + 18px) 16px 28px}
+
+.title{font-size:26px;font-weight:700;margin:0 0 16px;letter-spacing:-.02em}
+
+/* ── Carte ─────────────────────────────── */
+#map{position:absolute;inset:0;bottom:0;background:var(--slate);z-index:0}
+.leaflet-container{background:#0D1219!important;font-family:inherit}
+.leaflet-control-attribution{background:rgba(10,14,21,.7)!important;color:var(--faint)!important;font-size:9px!important}
+.leaflet-control-attribution a{color:var(--faint)!important}
+.leaflet-control-zoom{display:none}
+
+.map-veil{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(10,14,21,.85) 0,rgba(10,14,21,0) 22%,rgba(10,14,21,0) 45%,rgba(10,14,21,.6) 70%)}
+
+.me-dot{width:16px;height:16px;border-radius:50%;background:var(--sky);border:2.5px solid #0A0E15;box-shadow:0 0 0 6px rgba(90,169,255,.22)}
+
+/* ── Barre du haut ─────────────────────── */
+.topbar{position:absolute;top:0;left:0;right:0;z-index:3;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:calc(var(--safe-t) + 12px) 16px 10px;gap:12px}
+
+.topbar__status{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;
+  background:rgba(20,26,36,.82);backdrop-filter:blur(12px);
+  padding:7px 13px 7px 11px;border-radius:99px;border:1px solid var(--line)}
+
+.dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none;transition:background .25s}
+.dot.on{background:var(--mint);box-shadow:0 0 0 4px rgba(61,214,140,.18)}
+.dot.run{background:var(--sodium);box-shadow:0 0 0 4px rgba(255,182,39,.2);animation:pulse 1.9s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+.topbar__right{display:flex;align-items:center;gap:10px}
+.chrono{font-size:20px;font-weight:600;color:var(--text);
+  background:rgba(20,26,36,.82);backdrop-filter:blur(12px);
+  padding:4px 12px;border-radius:10px;border:1px solid var(--line)}
+
+.iconbtn{width:40px;height:40px;flex:none;display:grid;place-items:center;
+  background:rgba(20,26,36,.82);backdrop-filter:blur(12px);
+  border:1px solid var(--line);border-radius:12px;color:var(--text);cursor:pointer}
+.iconbtn:active{transform:scale(.94)}
+
+.gps-warn{position:absolute;z-index:3;left:16px;right:16px;top:calc(var(--safe-t) + 62px);
+  background:var(--rose-dim);border:1px solid #5C2A2C;color:#FFC9C9;
+  padding:9px 13px;border-radius:11px;font-size:12.5px;line-height:1.45}
+
+/* ── Feuille du bas ────────────────────── */
+.sheet{position:absolute;z-index:4;left:0;right:0;bottom:0;
+  background:var(--slate);border-radius:22px 22px 0 0;
+  border-top:1px solid var(--line);
+  padding:10px 16px calc(16px + var(--safe-b));
+  box-shadow:0 -18px 40px rgba(0,0,0,.5)}
+
+.sheet__grip{width:36px;height:4px;border-radius:99px;background:var(--slate-3);margin:0 auto 14px}
+
+.pane{display:none}
+.pane.is-active{display:block;animation:rise .22s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.pane__lead{margin:0 0 14px;color:var(--muted);font-size:14px}
+
+/* ── Boutons ───────────────────────────── */
+.btn{display:block;width:100%;border:none;border-radius:var(--r);
+  font-family:inherit;font-size:16px;font-weight:700;padding:16px;cursor:pointer;
+  transition:transform .12s ease,filter .12s ease}
+.btn:active{transform:scale(.985);filter:brightness(1.08)}
+.btn+.btn{margin-top:9px}
+
+.btn--go{background:var(--sodium);color:#20160A}
+.btn--ghost{background:var(--slate-2);color:var(--text);border:1px solid var(--line)}
+.btn--quiet{font-size:14.5px;font-weight:600;padding:13px;color:var(--muted)}
+.btn--danger{background:var(--rose-dim);color:#FFAFAF;border:1px solid #5C2A2C}
+
+.linkbtn{display:block;width:100%;background:none;border:none;color:var(--faint);
+  font-family:inherit;font-size:13.5px;padding:14px 0 4px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+/* ── Chiffres du bandeau ───────────────── */
+.figures{display:flex;gap:8px}
+.figures--foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.fig{flex:1;min-width:0}
+.fig__k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;font-weight:600;white-space:nowrap}
+.fig__v{font-family:'Barlow Condensed',sans-serif;font-size:23px;font-weight:600;line-height:1.15;margin-top:1px;font-variant-numeric:tabular-nums}
+.fig__v.pos{color:var(--mint)}
+.fig__v.neg{color:var(--rose)}
+.fig__v.acc{color:var(--sodium)}
+
+/* ── Course en cours ───────────────────── */
+.running{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.running__amount{display:flex;align-items:baseline;gap:4px}
+.running__amount .num{font-size:44px;font-weight:600;line-height:1}
+.running__amount .unit{font-size:20px;color:var(--muted);font-weight:600}
+.running__sub{margin:4px 0 16px;color:var(--muted);font-size:13.5px}
+
+.verdict-chip{font-size:12px;font-weight:700;padding:6px 12px;border-radius:99px;white-space:nowrap;margin-top:5px}
+.verdict-chip.go{background:var(--mint-dim);color:var(--mint)}
+.verdict-chip.no{background:var(--rose-dim);color:var(--rose)}
+.verdict-chip.mid{background:var(--sodium-dim);color:var(--sodium)}
+
+/* ── Onglets ───────────────────────────── */
+.tabbar{position:absolute;z-index:6;left:0;right:0;bottom:0;height:calc(62px + var(--safe-b));
+  display:flex;background:rgba(10,14,21,.92);backdrop-filter:blur(18px);
+  border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+.tabbar button{flex:1;background:none;border:none;color:var(--faint);
+  font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0}
+.tabbar svg{width:21px;height:21px}
+.tabbar button.is-on{color:var(--sodium)}
+
+/* ── Cartes ────────────────────────────── */
+.card{background:var(--slate);border:1px solid var(--line);border-radius:var(--r);padding:15px;margin-bottom:11px}
+.card__h{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;font-weight:700;margin:0 0 11px}
+
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px}
+.kpi{background:var(--slate);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px}
+.kpi__k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.kpi__v{font-family:'Barlow Condensed',sans-serif;font-size:29px;font-weight:600;line-height:1.1;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi__v.pos{color:var(--mint)}
+.kpi__v.acc{color:var(--sodium)}
+.kpi__s{font-size:11.5px;color:var(--faint);margin-top:2px}
+
+/* ── Lignes de données ─────────────────── */
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row__l{min-width:0}
+.row__t{font-size:14.5px;font-weight:600}
+.row__s{font-size:12px;color:var(--faint);margin-top:1px}
+.row__r{font-family:'Barlow Condensed',sans-serif;font-size:21px;font-weight:600;flex:none;font-variant-numeric:tabular-nums}
+.row--tap{cursor:pointer}
+.row--tap:active{opacity:.6}
+
+.sess{margin-bottom:11px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--slate)}
+.sess__h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;cursor:pointer;background:var(--slate-2)}
+.sess__d{font-size:14.5px;font-weight:700;text-transform:capitalize}
+.sess__m{font-size:11.5px;color:var(--faint);margin-top:1px}
+.sess__v{font-family:'Barlow Condensed',sans-serif;font-size:23px;font-weight:600;color:var(--mint);font-variant-numeric:tabular-nums}
+.sess__body{padding:2px 15px;display:none}
+.sess.open .sess__body{display:block}
+
+/* ── Barres horaires ───────────────────── */
+.bars{display:flex;align-items:flex-end;gap:3px;height:96px;margin:6px 0 8px}
+.bar{flex:1;background:var(--slate-3);border-radius:3px 3px 0 0;min-height:3px;position:relative;transition:height .3s}
+.bar.best{background:var(--sodium)}
+.barlabels{display:flex;justify-content:space-between;font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ── Segments ──────────────────────────── */
+.segmented{display:flex;gap:5px;background:var(--slate);border:1px solid var(--line);border-radius:11px;padding:4px;margin-bottom:14px}
+.segmented button{flex:1;background:none;border:none;color:var(--muted);font-family:inherit;
+  font-size:13px;font-weight:600;padding:9px 4px;border-radius:8px;cursor:pointer}
+.segmented button.is-on{background:var(--slate-3);color:var(--text)}
+
+/* ── Formulaires ───────────────────────── */
+.field{display:block;margin-bottom:13px}
+.field>span{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:6px}
+.fieldrow{display:flex;gap:10px}
+.fieldrow .field{flex:1;min-width:0}
+
+.inputwrap{position:relative;display:flex;align-items:center}
+.inputwrap i{position:absolute;right:14px;font-style:normal;color:var(--faint);font-size:14px;font-weight:600;pointer-events:none}
+
+input[type=number],input[type=text],select{
+  width:100%;background:var(--slate-2);border:1px solid var(--line);border-radius:11px;
+  color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:21px;font-weight:600;
+  padding:12px 40px 12px 14px;outline:none;-moz-appearance:textfield;font-variant-numeric:tabular-nums}
+input[type=text]{font-family:'Manrope',sans-serif;font-size:15px;font-weight:500;padding-right:14px}
+select{font-family:'Manrope',sans-serif;font-size:15px;font-weight:600;padding-right:14px;
+  appearance:none;background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A97A6' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:17px}
+input:focus,select:focus{border-color:var(--sodium)}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+.switchrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.switchrow:last-child{border-bottom:none}
+.switchrow__t{font-size:14.5px;font-weight:600}
+.switchrow__s{font-size:12px;color:var(--faint);margin-top:2px;line-height:1.45}
+.switch{width:48px;height:28px;flex:none;border-radius:99px;background:var(--slate-3);border:none;position:relative;cursor:pointer;transition:background .2s}
+.switch::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--muted);transition:transform .2s,background .2s}
+.switch.on{background:var(--sodium)}
+.switch.on::after{transform:translateX(20px);background:#20160A}
+
+.hint{font-size:12px;color:var(--faint);line-height:1.55;margin:8px 0 0}
+.hint strong{color:var(--muted);font-weight:600}
+
+.chiplist{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.chip{background:var(--slate-2);border:1px solid var(--line);border-radius:99px;
+  padding:7px 11px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+.chip button{background:none;border:none;color:var(--faint);font-size:17px;line-height:1;cursor:pointer;padding:0}
+
+/* ── Modales ───────────────────────────── */
+.modal{position:fixed;inset:0;z-index:20;background:rgba(5,8,13,.72);
+  backdrop-filter:blur(5px);display:flex;align-items:flex-end;animation:fade .18s ease}
+/* Une règle d'auteur qui pose display l'emporte sur l'attribut hidden :
+   il faut donc le rétablir explicitement, ici et partout ailleurs. */
+[hidden]{display:none!important}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.modal__card{width:100%;background:var(--slate);border-radius:22px 22px 0 0;
+  border-top:1px solid var(--line);padding:10px 16px calc(18px + var(--safe-b));
+  max-height:92vh;overflow-y:auto;animation:slideup .26s cubic-bezier(.22,1,.36,1)}
+@keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
+.modal__grip{width:36px;height:4px;border-radius:99px;background:var(--slate-3);margin:0 auto 16px}
+.modal__card h2{font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+.modal__sub{font-size:13px;color:var(--muted);margin:0 0 16px}
+.modal__card h2+.fieldrow,.modal__card h2+.field{margin-top:16px}
+.modal__actions{display:flex;gap:10px;margin-top:6px}
+.modal__actions .btn{margin-top:0}
+.modal__actions .btn--ghost{flex:0 0 38%}
+
+/* ── Verdict ───────────────────────────── */
+.verdict{border-radius:var(--r);padding:14px;margin:4px 0 16px;border:1px solid var(--line);background:var(--slate-2)}
+.verdict.go{background:var(--mint-dim);border-color:#1B5C42}
+.verdict.no{background:var(--rose-dim);border-color:#5C2A2C}
+.verdict.mid{background:var(--sodium-dim);border-color:#5C4715}
+.verdict__head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.verdict__word{font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+.verdict.go .verdict__word{color:var(--mint)}
+.verdict.no .verdict__word{color:var(--rose)}
+.verdict.mid .verdict__word{color:var(--sodium)}
+.verdict__rate{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.verdict__lines{margin-top:9px;display:grid;gap:4px}
+.vline{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.vline b{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ── Toast ─────────────────────────────── */
+/* Purement informatif : il ne doit jamais intercepter un appui,
+   sans quoi il rend inertes les boutons qu'il recouvre. */
+.toast{pointer-events:none;position:fixed;z-index:40;left:16px;right:16px;bottom:calc(78px + var(--safe-b));
+  background:var(--slate-3);border:1px solid var(--line);border-radius:12px;
+  padding:13px 15px;font-size:14px;font-weight:600;text-align:center;
+  animation:rise .2s ease-out;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+
+.empty{text-align:center;padding:46px 20px;color:var(--faint)}
+.empty__t{font-size:15.5px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.empty__s{font-size:13.5px;line-height:1.55}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ═══════════════════════════════════════════
+   Écran Statut
+   ═══════════════════════════════════════════ */
+
+.banner{background:var(--slate-2);border:1px solid var(--line);border-radius:var(--r);
+  padding:13px 15px;font-size:13px;line-height:1.55;color:var(--muted);margin-bottom:11px}
+.banner b{color:var(--text);font-weight:700}
+.banner--warn{background:var(--sodium-dim);border-color:#5C4715;color:#F0D9A8}
+.banner--warn b{color:var(--sodium)}
+
+.card--urgent{border-color:#5C4715;background:linear-gradient(var(--sodium-dim),var(--sodium-dim)) padding-box,var(--slate)}
+
+.pill{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap;flex:none;
+  background:var(--slate-3);color:var(--muted)}
+.pill--warn{background:var(--sodium-dim);color:var(--sodium)}
+.pill--bad{background:var(--rose-dim);color:var(--rose)}
+.pill--ok{background:var(--mint-dim);color:var(--mint)}
+
+.deadline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.deadline__d{font-family:'Barlow Condensed',sans-serif;font-size:25px;font-weight:600;line-height:1.15}
+.deadline__d::first-letter{text-transform:uppercase}
+.deadline__s{font-size:12px;color:var(--faint);margin-top:2px}
+
+/* Le montant à recopier : la raison d'être de l'écran */
+.copybox{background:var(--slate-2);border:1px solid var(--line);border-radius:12px;
+  padding:15px;text-align:center;margin-bottom:12px}
+.copybox__k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
+.copybox__v{font-family:'Barlow Condensed',sans-serif;font-size:46px;font-weight:700;
+  color:var(--sodium);line-height:1.05;margin:4px 0 12px;font-variant-numeric:tabular-nums}
+.copybox .btn{margin-top:0}
+
+.meter{margin-bottom:16px}
+.meter:last-child{margin-bottom:0}
+.meter__top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  font-size:13px;color:var(--muted);margin-bottom:7px}
+.meter__top b{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;
+  color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.meter__s{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5}
+
+.gauge{height:9px;border-radius:99px;background:var(--slate-3);overflow:hidden}
+.gauge__fill{height:100%;border-radius:99px;transition:width .5s ease}
+.gauge__fill.ok{background:var(--mint)}
+.gauge__fill.warn{background:var(--sodium)}
+.gauge__fill.bad{background:var(--rose)}
+
+/* Démarches */
+.step{border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:none}
+.step__h{display:flex;align-items:flex-start;gap:11px;padding:13px 0;cursor:pointer}
+.step__t{flex:1;min-width:0}
+.step__title{font-size:14.5px;font-weight:600;line-height:1.35}
+.step__when{font-size:11.5px;color:var(--faint);margin-top:2px}
+.step.is-done .step__title{color:var(--faint);text-decoration:line-through}
+
+.check{width:23px;height:23px;flex:none;margin-top:1px;border-radius:7px;
+  border:1.5px solid var(--slate-3);background:none;cursor:pointer;position:relative;transition:.16s}
+.check.on{background:var(--mint);border-color:var(--mint)}
+.check.on::after{content:'';position:absolute;left:7px;top:3px;width:5px;height:10px;
+  border:solid #04342C;border-width:0 2.5px 2.5px 0;transform:rotate(43deg)}
+
+.tag{display:inline-block;font-size:10px;font-weight:700;background:var(--rose-dim);color:var(--rose);
+  padding:2px 7px;border-radius:99px;margin-right:6px;letter-spacing:.02em;white-space:nowrap}
+.step__when{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+
+.step__body{display:none;padding:0 0 15px 34px}
+.step.open .step__body{display:block}
+.step__why{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 11px}
+.step__list{margin:0 0 11px;padding-left:19px;font-size:13px;color:var(--muted);line-height:1.65}
+.step__list li{margin-bottom:5px}
+.step__prep{font-size:12.5px;color:var(--faint);margin:0 0 5px;line-height:1.55}
+.step__prep b{color:var(--muted);font-weight:600}
+
+/* Glossaire */
+.fiche{border-bottom:1px solid var(--line)}
+.fiche:last-child{border-bottom:none}
+.fiche summary{padding:12px 0;font-size:14.5px;font-weight:600;cursor:pointer;list-style:none;
+  display:flex;align-items:center;justify-content:space-between}
+.fiche summary::-webkit-details-marker{display:none}
+.fiche summary::after{content:'+';color:var(--faint);font-size:19px;font-weight:400;flex:none;margin-left:10px}
+.fiche[open] summary::after{content:'−'}
+.fiche p{margin:0 0 14px;font-size:13px;color:var(--muted);line-height:1.65}
+
+input[type=date]{width:100%;background:var(--slate-2);border:1px solid var(--line);border-radius:11px;
+  color:var(--text);font-family:'Manrope',sans-serif;font-size:15px;font-weight:600;
+  padding:12px 14px;outline:none;-webkit-appearance:none}
+input[type=date]:focus{border-color:var(--sodium)}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.65)}
+
+.tabbar button{font-size:9.5px}
+
+/* Message affiché quand le fond de carte fait défaut :
+   informatif, jamais bloquant. */
+.map-notice{position:absolute;z-index:2;left:24px;right:24px;top:50%;transform:translateY(-50%);
+  text-align:center;font-size:13px;line-height:1.6;color:var(--faint)}
+
+.diag{font-family:var(--font-mono,ui-monospace,monospace);font-size:11.5px;line-height:1.7;
+  background:var(--slate-2);border:1px solid var(--line);border-radius:11px;
+  padding:12px 13px;color:var(--muted);white-space:pre-wrap;word-break:break-word;margin-bottom:11px}
+
+/* ═══════════════════════════════════════════
+   Grand objectif
+   ═══════════════════════════════════════════ */
+
+.goal .card__h{margin-bottom:6px}
+.goal__row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.goal__big{font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:700;
+  line-height:1;font-variant-numeric:tabular-nums}
+.goal__sub{font-size:13px;color:var(--muted);margin-top:3px}
+.goal__scale{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-top:5px}
+
+/* Le chiffre qui compte vraiment : combien aujourd'hui */
+.goal__target{background:var(--slate-2);border:1px solid var(--line);border-radius:12px;
+  padding:14px;text-align:center;margin:14px 0 12px}
+.goal__tk{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
+.goal__tv{font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:700;
+  color:var(--sodium);line-height:1.05;margin:2px 0;font-variant-numeric:tabular-nums}
+.goal__ts{font-size:12px;color:var(--faint);line-height:1.5}
+
+.goal__today{margin-top:4px}
+.goal__trow{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:13px;color:var(--muted);margin-bottom:6px}
+.goal__trow b{font-family:'Barlow Condensed',sans-serif;font-size:17px;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.goal__today .goal__ts{margin-top:6px}
+
+/* Sélecteur de jours travaillables */
+.daylbl{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin:4px 0 8px}
+.daypick{display:flex;gap:6px;margin-bottom:12px}
+.daypick button{flex:1;aspect-ratio:1;min-width:0;background:var(--slate-2);
+  border:1px solid var(--line);border-radius:10px;color:var(--faint);
+  font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:.15s;padding:0}
+.daypick button.on{background:var(--sodium);border-color:var(--sodium);color:#20160A}
+.daypick button:active{transform:scale(.93)}
+
+/* Bandeau d'objectif sur l'écran Course */
+.goalbar{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+.goalbar__row{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.goalbar__row b{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:600;
+  color:var(--sodium);font-variant-numeric:tabular-nums}
+
+/* Démarche écartée */
+.step.is-na{opacity:.45}
+.step.is-na .step__title{text-decoration:none}
+.step__na{display:block;width:100%;background:none;border:none;color:var(--faint);
+  font-family:inherit;font-size:12.5px;padding:8px 0 0;cursor:pointer;
+  text-decoration:underline;text-underline-offset:3px;text-align:left}
+.check.na{background:var(--slate-3);border-color:var(--slate-3);position:relative}
+.check.na::after{content:'';position:absolute;left:5px;top:9.5px;width:11px;height:2px;
+  background:var(--faint);border:none;transform:none}
+
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ══ ÉCRAN COURSE ══ -->
+  <section class="screen screen--course is-active" id="screen-course">
+
+    <div id="map" aria-label="Carte de la tournée"></div>
+    <div class="map-veil" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="topbar__status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-label">Hors service</span>
+      </div>
+      <div class="topbar__right">
+        <span class="chrono" id="chrono">00:00</span>
+        <button class="iconbtn" id="btn-recenter" aria-label="Recentrer la carte">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="gps-warn" id="gps-warn" hidden></div>
+    <div class="map-notice" id="map-notice" hidden></div>
+
+    <!-- Feuille du bas -->
+    <div class="sheet" id="sheet">
+      <div class="sheet__grip" aria-hidden="true"></div>
+
+      <!-- État : hors service -->
+      <div class="pane is-active" id="pane-idle">
+        <p class="pane__lead">Lance ton shift pour commencer à compter.</p>
+        <button class="btn btn--go" id="btn-start-shift">Démarrer le shift</button>
+        <div class="recap" id="recap-idle"></div>
+      </div>
+
+      <!-- État : shift actif, en attente d'une course -->
+      <div class="pane" id="pane-ready">
+        <button class="btn btn--go" id="btn-open-offer">Nouvelle course</button>
+        <button class="btn btn--ghost" id="btn-end-shift">Terminer le shift</button>
+      </div>
+
+      <!-- État : course en cours -->
+      <div class="pane" id="pane-running">
+        <div class="running">
+          <div class="running__amount">
+            <span class="num" id="run-amount">—</span>
+            <span class="unit">€</span>
+          </div>
+          <span class="verdict-chip" id="run-chip"></span>
+        </div>
+        <p class="running__sub" id="run-sub">0,00 km parcourus</p>
+        <button class="btn btn--go" id="btn-deliver">Course livrée</button>
+        <button class="btn btn--ghost btn--quiet" id="btn-cancel-course">Annuler la course</button>
+      </div>
+
+      <div class="figures figures--foot" id="figures-foot"></div>
+      <div class="goalbar" id="goalbar" hidden></div>
+    </div>
+  </section>
+
+  <!-- ══ ÉCRAN HISTORIQUE ══ -->
+  <section class="screen screen--scroll" id="screen-history">
+    <h1 class="title">Historique</h1>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- ══ ÉCRAN STATUT ══ -->
+  <section class="screen screen--scroll" id="screen-admin">
+    <h1 class="title">Statut</h1>
+    <div id="admin-body"></div>
+  </section>
+
+  <!-- ══ ÉCRAN STATS ══ -->
+  <section class="screen screen--scroll" id="screen-stats">
+    <h1 class="title">Stats</h1>
+    <div class="segmented" id="stats-range">
+      <button data-range="7" class="is-on">7 jours</button>
+      <button data-range="30">30 jours</button>
+      <button data-range="9999">Tout</button>
+    </div>
+    <div id="stats-body"></div>
+  </section>
+
+  <!-- ══ ÉCRAN RÉGLAGES ══ -->
+  <section class="screen screen--scroll" id="screen-settings">
+    <h1 class="title">Réglages</h1>
+    <div id="settings-body"></div>
+  </section>
+
+  <!-- ══ BARRE D'ONGLETS ══ -->
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="course" class="is-on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3z"/><path d="M9 4v13M15 7v13"/></svg>
+      <span>Course</span>
+    </button>
+    <button data-tab="admin">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 14l2 2 4-4"/></svg>
+      <span>Statut</span>
+    </button>
+    <button data-tab="history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>
+      <span>Courses</span>
+    </button>
+    <button data-tab="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Stats</span>
+    </button>
+    <button data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.6 1.6 0 008 19.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H2a2 2 0 110-4h.1A1.6 1.6 0 004.6 8a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V2a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H22a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
+      <span>Réglages</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ══ MODALE : ÉVALUER UNE OFFRE ══ -->
+<div class="modal" id="modal-offer" hidden>
+  <div class="modal__card">
+    <div class="modal__grip" aria-hidden="true"></div>
+    <h2>Cette course, tu la prends ?</h2>
+    <div class="fieldrow">
+      <label class="field">
+        <span>Montant proposé</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.01" id="offer-amount" placeholder="0,00"><i>€</i></div>
+      </label>
+      <label class="field">
+        <span>Distance annoncée</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.1" id="offer-km" placeholder="0,0"><i>km</i></div>
+      </label>
+    </div>
+    <label class="field">
+      <span>Plateforme</span>
+      <select id="offer-platform"></select>
+    </label>
+
+    <div class="verdict" id="offer-verdict">
+      <div class="verdict__head">
+        <span class="verdict__word" id="verdict-word">—</span>
+        <span class="verdict__rate" id="verdict-rate"></span>
+      </div>
+      <div class="verdict__lines" id="verdict-lines"></div>
+    </div>
+
+    <div class="modal__actions">
+      <button class="btn btn--ghost" data-close="modal-offer">Refuser</button>
+      <button class="btn btn--go" id="btn-accept-offer">Démarrer</button>
+    </div>
+    <button class="linkbtn" id="btn-skip-offer">Démarrer sans évaluer</button>
+  </div>
+</div>
+
+<!-- ══ MODALE : CLÔTURE DE COURSE ══ -->
+<div class="modal" id="modal-close" hidden>
+  <div class="modal__card">
+    <div class="modal__grip" aria-hidden="true"></div>
+    <h2>Course terminée</h2>
+    <p class="modal__sub" id="close-tracked"></p>
+    <div class="fieldrow">
+      <label class="field">
+        <span>Montant encaissé</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.01" id="close-amount" placeholder="0,00"><i>€</i></div>
+      </label>
+      <label class="field">
+        <span>Pourboire</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.01" id="close-tip" placeholder="0,00"><i>€</i></div>
+      </label>
+    </div>
+    <label class="field">
+      <span>Distance retenue</span>
+      <div class="inputwrap"><input type="number" inputmode="decimal" step="0.1" id="close-km"><i>km</i></div>
+    </label>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" data-close="modal-close">Retour</button>
+      <button class="btn btn--go" id="btn-save-course">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODALE : RETOUCHE D'UNE COURSE ══ -->
+<div class="modal" id="modal-edit" hidden>
+  <div class="modal__card">
+    <div class="modal__grip" aria-hidden="true"></div>
+    <h2>Modifier la course</h2>
+    <div class="fieldrow">
+      <label class="field">
+        <span>Montant</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.01" id="edit-amount"><i>€</i></div>
+      </label>
+      <label class="field">
+        <span>Pourboire</span>
+        <div class="inputwrap"><input type="number" inputmode="decimal" step="0.01" id="edit-tip"><i>€</i></div>
+      </label>
+    </div>
+    <label class="field">
+      <span>Distance</span>
+      <div class="inputwrap"><input type="number" inputmode="decimal" step="0.1" id="edit-km"><i>km</i></div>
+    </label>
+    <div class="modal__actions">
+      <button class="btn btn--danger" id="btn-delete-course">Supprimer</button>
+      <button class="btn btn--go" id="btn-update-course">Enregistrer</button>
+    </div>
+    <button class="linkbtn" data-close="modal-edit">Annuler</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ═══════════════════════════════════════════
+   store.js — persistance locale
+   Tout reste sur l'appareil. Aucun serveur.
+   ═══════════════════════════════════════════ */
+
+const Store = (() => {
+
+  const KEY = 'tournee.v1';
+
+  /* Coût au km et vitesse moyenne par véhicule.
+     Ce ne sont que des points de départ : l'utilisateur
+     peut tout écraser dans les réglages. */
+  const VEHICLES = {
+    pied:    { label: 'À pied',           cost: 0.00, speed: 5  },
+    velo:    { label: 'Vélo mécanique',   cost: 0.04, speed: 15 },
+    vae:     { label: 'Vélo électrique',  cost: 0.07, speed: 18 },
+    scooter: { label: 'Scooter',          cost: 0.15, speed: 24 },
+    moto:    { label: 'Moto',             cost: 0.20, speed: 28 },
+    voiture: { label: 'Voiture',          cost: 0.35, speed: 22 }
+  };
+
+  /* Les taux, seuils et échéances ne vivent plus ici :
+     ils sont chargés depuis data/reglementation.json par Rules,
+     pour rester modifiables sans toucher au code. */
+
+  const DEFAULTS = {
+    settings: {
+      vehicle: 'vae',
+      costPerKm: 0.07,
+      avgSpeed: 18,
+      thresholdPerKm: 1.20,   // seuil d'acceptation en €/km
+      minFare: 4.00,          // course minimum acceptable
+      cotisationRate: 21.2,   // % du CA encaissé
+      provisionRate: 25,      // % du CA à mettre de côté (social + impôt)
+      hourlyGoal: 15,         // objectif net €/h
+      dailyGoal: 80,          // objectif net €/jour
+      platforms: ['Uber Eats', 'Deliveroo'],
+      lastPlatform: 'Uber Eats',
+      // — Statut administratif —
+      dateDebut: '',            // date de début d'activité (AAAA-MM-JJ)
+      regimeId: 'bic_serv',     // identifiant d'un régime du fichier de réglementation
+      acreActive: false,        // exonération ACRE en cours
+      periodicite: 'trimestrielle',
+      // — Objectif de chiffre —
+      goalEnabled: true,
+      goalAmount: 35000,        // montant visé sur la période
+      goalBasis: 'brut',        // 'brut' (CA encaissé) ou 'net' (après charges)
+      goalStart: '',            // vide = 1er janvier de l'année en cours
+      goalEnd: '',              // vide = 31 décembre de l'année en cours
+      goalDays: [1, 2, 3, 4, 5],// jours travaillables, 0 = dimanche … 6 = samedi
+      autoDistance: true,     // mesurer les km au GPS
+      keepAwake: true,        // garder l'écran allumé en course
+      countReturn: false      // compter le trajet de retour à vide
+    },
+    sessions: [],   // { id, start, end }
+    courses: [],    // { id, sessionId, platform, start, end, km, amount, tip, offerKm, offerAmount }
+    active: null,   // { sessionId, courseId, courseStart, offerAmount, offerKm, platform }
+    checklist: {},  // { [idDeLEtape]: { s: 'fait' | 'na', t: horodatage } }
+    meta: { version: 1, created: null }
+  };
+
+  let db = null;
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  function load() {
+    if (db) return db;
+    try {
+      const raw = localStorage.getItem(KEY);
+      db = raw ? JSON.parse(raw) : clone(DEFAULTS);
+    } catch (e) {
+      db = clone(DEFAULTS);
+    }
+    // Fusion : garantit que les réglages ajoutés dans une version
+    // ultérieure existent bien sur une base déjà en place.
+    db.settings = Object.assign({}, DEFAULTS.settings, db.settings || {});
+    db.sessions  = db.sessions  || [];
+    db.courses   = db.courses   || [];
+    db.checklist = db.checklist || {};
+    db.meta      = Object.assign({}, DEFAULTS.meta, db.meta || {});
+    if (!db.meta.created) db.meta.created = Date.now();
+    return db;
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(db));
+    } catch (e) {
+      console.warn('Sauvegarde impossible', e);
+    }
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  /* ── Réglages ─────────────────────────── */
+  function settings() { return load().settings; }
+
+  function setSetting(key, value) {
+    load().settings[key] = value;
+    save();
+  }
+
+  /* ── Shifts ───────────────────────────── */
+  function openSession() {
+    const d = load();
+    const s = { id: uid(), start: Date.now(), end: null };
+    d.sessions.push(s);
+    d.active = { sessionId: s.id, courseId: null };
+    save();
+    return s;
+  }
+
+  function closeSession() {
+    const d = load();
+    if (!d.active) return null;
+    const s = d.sessions.find(x => x.id === d.active.sessionId);
+    if (s) s.end = Date.now();
+    d.active = null;
+    save();
+    return s;
+  }
+
+  function activeSession() {
+    const d = load();
+    if (!d.active) return null;
+    return d.sessions.find(x => x.id === d.active.sessionId) || null;
+  }
+
+  function active() { return load().active; }
+
+  function setActive(patch) {
+    const d = load();
+    d.active = d.active ? Object.assign(d.active, patch) : patch;
+    save();
+  }
+
+  /* ── Courses ──────────────────────────── */
+  function startCourse(offer) {
+    const d = load();
+    if (!d.active) return null;
+    d.active.courseId    = uid();
+    d.active.courseStart = Date.now();
+    d.active.offerAmount = offer && offer.amount != null ? offer.amount : null;
+    d.active.offerKm     = offer && offer.km != null ? offer.km : null;
+    d.active.platform    = (offer && offer.platform) || d.settings.lastPlatform;
+    save();
+    return d.active.courseId;
+  }
+
+  function saveCourse(data) {
+    const d = load();
+    const c = {
+      id: d.active && d.active.courseId ? d.active.courseId : uid(),
+      sessionId: d.active ? d.active.sessionId : null,
+      platform: data.platform || d.settings.lastPlatform,
+      start: (d.active && d.active.courseStart) || Date.now(),
+      end: Date.now(),
+      km: Number(data.km) || 0,
+      amount: Number(data.amount) || 0,
+      tip: Number(data.tip) || 0,
+      offerKm: d.active ? d.active.offerKm : null,
+      offerAmount: d.active ? d.active.offerAmount : null
+    };
+    d.courses.push(c);
+    if (d.active) {
+      d.active.courseId = null;
+      d.active.courseStart = null;
+      d.active.offerAmount = null;
+      d.active.offerKm = null;
+    }
+    d.settings.lastPlatform = c.platform;
+    save();
+    return c;
+  }
+
+  function abortCourse() {
+    const d = load();
+    if (!d.active) return;
+    d.active.courseId = null;
+    d.active.courseStart = null;
+    d.active.offerAmount = null;
+    d.active.offerKm = null;
+    save();
+  }
+
+  function updateCourse(id, patch) {
+    const c = load().courses.find(x => x.id === id);
+    if (!c) return null;
+    Object.assign(c, patch);
+    save();
+    return c;
+  }
+
+  function deleteCourse(id) {
+    const d = load();
+    d.courses = d.courses.filter(x => x.id !== id);
+    save();
+  }
+
+  function courses()  { return load().courses; }
+  function sessions() { return load().sessions; }
+
+  function coursesOf(sessionId) {
+    return load().courses.filter(c => c.sessionId === sessionId)
+                         .sort((a, b) => a.start - b.start);
+  }
+
+  /* ── Suivi des démarches ──────────────── */
+
+  /* Trois états possibles : à faire, fait, ou hors sujet.
+     Le troisième évite de laisser traîner une étape qui ne
+     concerne pas la personne, comme l'ACRE sans éligibilité. */
+  function checklist() {
+    const c = load().checklist;
+    // Reprise des anciennes données, où la valeur était un horodatage nu.
+    Object.keys(c).forEach(k => {
+      if (typeof c[k] === 'number') c[k] = { s: 'fait', t: c[k] };
+    });
+    return c;
+  }
+
+  function stepState(id) {
+    const v = checklist()[id];
+    return v ? v.s : null;
+  }
+
+  function setStep(id, state) {
+    const d = load();
+    if (!state) delete d.checklist[id];
+    else d.checklist[id] = { s: state, t: Date.now() };
+    save();
+    return state;
+  }
+
+  function toggleCheck(id) {
+    return setStep(id, stepState(id) === 'fait' ? null : 'fait');
+  }
+
+  /* ── Sauvegarde / restauration ────────── */
+  function exportJSON() {
+    return JSON.stringify(load(), null, 2);
+  }
+
+  function importJSON(text) {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.courses)) {
+      throw new Error('Fichier non reconnu');
+    }
+    db = parsed;
+    db.settings = Object.assign({}, DEFAULTS.settings, db.settings || {});
+    db.sessions  = db.sessions  || [];
+    db.checklist = db.checklist || {};
+    db.meta      = Object.assign({}, DEFAULTS.meta, db.meta || {});
+    save();
+  }
+
+  function wipe() {
+    db = clone(DEFAULTS);
+    db.meta.created = Date.now();
+    save();
+  }
+
+  return {
+    VEHICLES,
+    settings, setSetting,
+    openSession, closeSession, activeSession, active, setActive,
+    startCourse, saveCourse, abortCourse, updateCourse, deleteCourse,
+    courses, sessions, coursesOf,
+    checklist, stepState, setStep, toggleCheck,
+    exportJSON, importJSON, wipe
+  };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   rules.js — la loi, séparée du programme
+
+   Aucun taux, aucun seuil, aucune échéance
+   n'est écrit en dur ailleurs que dans le
+   fichier data/reglementation.json.
+
+   Ordre de priorité :
+     1. le fichier importé par l'utilisateur
+     2. data/reglementation.json du dépôt
+     3. le secours minimal ci-dessous
+   ═══════════════════════════════════════════ */
+
+const Rules = (() => {
+
+  const KEY = 'tournee.rules';
+
+  /* Secours utilisé seulement si le fichier du dépôt est
+     introuvable et qu'aucun import n'a été fait. Volontairement
+     réduit : il permet à l'app de démarrer, pas de faire foi. */
+  /* Bareme complet embarque : un seul fichier suffit.
+     Un reglementation.json pose a cote prend le dessus,
+     et un import utilisateur prime sur les deux. */
+  const FALLBACK = {
+    "schema": 1,
+    "version": "2026.08",
+    "verifiedOn": "2026-08-28",
+    "label": "Régime micro-entrepreneur — France",
+    "sources": [
+      "https://www.autoentrepreneur.urssaf.fr",
+      "https://entreprendre.service-public.fr",
+      "https://formalites.entreprises.gouv.fr"
+    ],
+    "notes": "Barème du régime micro applicable en 2026. Remplace ce fichier quand la loi change : l'application n'en connaît aucune valeur en dur.",
+    "regimes": [
+      {
+        "id": "bic_serv",
+        "label": "Prestations de services BIC",
+        "aide": "Le régime des livreurs, coursiers et prestataires. Code APE 5320Z pour la livraison.",
+        "cotisation": 21.2,
+        "cfp": 0.3,
+        "abattement": 50,
+        "versementLiberatoire": 1.7,
+        "plafondCA": 83600,
+        "tvaBase": 37500,
+        "tvaMajore": 41250,
+        "defaut": true
+      },
+      {
+        "id": "vente",
+        "label": "Vente de marchandises",
+        "aide": "Achat-revente, restauration à emporter, hébergement.",
+        "cotisation": 12.3,
+        "cfp": 0.1,
+        "abattement": 71,
+        "versementLiberatoire": 1.0,
+        "plafondCA": 203100,
+        "tvaBase": 85000,
+        "tvaMajore": 93500
+      },
+      {
+        "id": "bnc",
+        "label": "Activité libérale BNC",
+        "aide": "Professions libérales non réglementées hors CIPAV.",
+        "cotisation": 25.6,
+        "cfp": 0.2,
+        "abattement": 34,
+        "versementLiberatoire": 2.2,
+        "plafondCA": 83600,
+        "tvaBase": 37500,
+        "tvaMajore": 41250
+      }
+    ],
+    "acre": {
+      "label": "ACRE — exonération partielle de cotisations",
+      "exonerationPct": 25,
+      "dureeMois": 12,
+      "delaiDemandeJours": 60,
+      "applicableDepuis": "2026-07-01",
+      "aide": "Réduction des cotisations sociales pendant les 12 premiers mois. Le décret du 6 février 2026 a ramené l'exonération de 50 % à 25 % pour les entreprises créées à partir du 1er juillet 2026. La demande se dépose auprès de l'URSSAF dans les 60 jours suivant le début d'activité : passé ce délai, le droit est définitivement perdu.",
+      "lien": "https://www.urssaf.fr/accueil/independant/creer-mon-entreprise/aide-creation-acre.html",
+      "conditions": [
+        "Demandeur d'emploi indemnisé ou indemnisable",
+        "Demandeur d'emploi non indemnisé inscrit depuis plus de 6 mois sur les 18 derniers",
+        "Bénéficiaire du RSA ou de l'ASS",
+        "Âgé de 18 à 25 ans révolus",
+        "Moins de 30 ans reconnu handicapé ou sans droits à l'assurance chômage",
+        "Création dans un quartier prioritaire de la politique de la ville"
+      ]
+    },
+    "declaration": {
+      "premiereDeclarationJours": 90,
+      "penaliteRetard": 60.1,
+      "obligatoireSiZero": true,
+      "arrondiEuro": true,
+      "lien": "https://www.autoentrepreneur.urssaf.fr",
+      "echeancesTrimestrielles": [
+        {
+          "periode": "1er janvier — 31 mars",
+          "limite": "04-30"
+        },
+        {
+          "periode": "1er avril — 30 juin",
+          "limite": "07-31"
+        },
+        {
+          "periode": "1er juillet — 30 septembre",
+          "limite": "10-31"
+        },
+        {
+          "periode": "1er octobre — 31 décembre",
+          "limite": "01-31"
+        }
+      ],
+      "aideMensuelle": "Le chiffre d'affaires encaissé un mois se déclare avant la fin du mois suivant. Celui de juin se déclare donc avant le 31 juillet.",
+      "aideTrimestrielle": "Quatre échéances par an, chacune portant sur les trois mois précédents.",
+      "aidePremiere": "La toute première déclaration n'est exigible qu'après un délai de 90 jours à compter du début d'activité. Elle cumule alors les périodes écoulées.",
+      "aideZero": "La déclaration reste obligatoire même sans aucune recette : on saisit 0. L'oublier coûte une pénalité forfaitaire par déclaration manquante."
+    },
+    "plafonds": {
+      "prorataPremiereAnnee": true,
+      "aideProrata": "L'année de création, le plafond est réduit au prorata des jours d'activité restants sur l'année civile.",
+      "sortieApresAnnees": 2,
+      "aideDepassement": "Un dépassement sur une seule année n'a aucune conséquence. Deux années civiles consécutives au-dessus font basculer au régime réel au 1er janvier suivant.",
+      "aideTva": "Le seuil de TVA est distinct du plafond du régime micro. Au-dessus du seuil de base, la franchise cesse au 1er janvier suivant ; au-dessus du seuil majoré, la TVA s'applique dès le jour du dépassement."
+    },
+    "parcours": [
+      {
+        "id": "immat",
+        "titre": "Immatriculer la micro-entreprise",
+        "quand": "Avant la première course",
+        "delaiJours": null,
+        "critique": true,
+        "pourquoi": "Les plateformes n'activent pas de compte sans numéro SIRET. C'est le point de départ obligatoire.",
+        "comment": [
+          "Va sur le Guichet unique de l'INPI et crée un compte",
+          "Choisis « Créer une entreprise », personne physique, activité commerciale",
+          "Déclare l'activité de livraison à domicile — code APE 5320Z",
+          "Coche le régime micro-entrepreneur et choisis ta périodicité de déclaration",
+          "Le SIRET arrive par courrier ou dans ton espace sous 8 à 15 jours"
+        ],
+        "aPreparer": [
+          "Pièce d'identité",
+          "Justificatif de domicile de moins de 3 mois",
+          "Numéro de sécurité sociale"
+        ],
+        "cout": "Gratuit",
+        "lien": "https://formalites.entreprises.gouv.fr"
+      },
+      {
+        "id": "acre",
+        "titre": "Demander l'ACRE",
+        "quand": "Dans les 60 jours suivant le début d'activité",
+        "delaiJours": 60,
+        "critique": true,
+        "pourquoi": "Réduit tes cotisations pendant 12 mois. Le délai est strict : au-delà, le droit est perdu pour de bon.",
+        "comment": [
+          "Vérifie que tu remplis l'une des conditions d'éligibilité",
+          "Remplis le formulaire de demande d'ACRE",
+          "Envoie-le à l'URSSAF avec les justificatifs de ta situation",
+          "Contrôle le taux affiché sur ta première échéance : c'est là qu'on voit si l'ACRE a bien été enregistrée"
+        ],
+        "aPreparer": [
+          "Justificatif de situation : attestation France Travail, RSA, ou pièce d'identité si moins de 26 ans"
+        ],
+        "cout": "Gratuit",
+        "lien": "https://www.urssaf.fr/accueil/independant/creer-mon-entreprise/aide-creation-acre.html"
+      },
+      {
+        "id": "plateforme",
+        "titre": "Activer le compte sur la plateforme",
+        "quand": "Dès réception du SIRET",
+        "delaiJours": null,
+        "critique": false,
+        "pourquoi": "Sans SIRET valide, le compte livreur reste bloqué.",
+        "comment": [
+          "Crée le compte livreur sur la plateforme choisie",
+          "Renseigne le SIRET et téléverse l'avis de situation SIRENE",
+          "Fournis la pièce d'identité ou le titre de séjour autorisant le travail indépendant",
+          "Attends la validation, généralement 24 à 72 heures"
+        ],
+        "aPreparer": [
+          "Avis de situation SIRENE",
+          "Pièce d'identité",
+          "RIB"
+        ],
+        "cout": "Gratuit",
+        "lien": null
+      },
+      {
+        "id": "assurance",
+        "titre": "Vérifier ta couverture assurance",
+        "quand": "Avant la première course",
+        "delaiJours": null,
+        "critique": false,
+        "pourquoi": "Les plateformes fournissent une couverture accident pendant les courses, mais elle est limitée et ne remplace pas une responsabilité civile professionnelle. En cas d'arrêt, tes revenus s'arrêtent aussi.",
+        "comment": [
+          "Lis ce que couvre exactement l'assurance de la plateforme, et surtout ce qu'elle exclut",
+          "Vérifie si ton assurance habitation couvre déjà ta responsabilité civile en activité professionnelle",
+          "Compare une RC pro et une garantie accidents de la vie ou une prévoyance",
+          "Vérifie la couverture de ton véhicule en usage professionnel"
+        ],
+        "aPreparer": [
+          "Contrat d'assurance habitation actuel"
+        ],
+        "cout": "Variable",
+        "lien": null
+      },
+      {
+        "id": "banque",
+        "titre": "Ouvrir un compte bancaire dédié",
+        "quand": "Obligatoire au-delà de 10 000 € de CA sur deux années consécutives",
+        "delaiJours": null,
+        "critique": false,
+        "pourquoi": "Séparer les flux professionnels et personnels. Un compte courant classique suffit : la loi n'impose pas un compte professionnel, plus cher.",
+        "comment": [
+          "Ouvre un second compte courant, éventuellement dans une banque en ligne",
+          "Fais-y verser les paiements des plateformes",
+          "Prélève-toi de ce compte vers ton compte personnel"
+        ],
+        "aPreparer": [
+          "Pièce d'identité",
+          "Justificatif de domicile",
+          "Avis de situation SIRENE"
+        ],
+        "cout": "De 0 à quelques euros par mois",
+        "lien": null
+      },
+      {
+        "id": "vl",
+        "titre": "Décider du versement libératoire",
+        "quand": "Dans les 3 mois de la création, ou avant le 30 septembre pour l'année suivante",
+        "delaiJours": 90,
+        "critique": false,
+        "pourquoi": "Permet de payer l'impôt sur le revenu en même temps que les cotisations, par petits montants. Intéressant si tu es imposable, inutile voire coûteux si tu ne l'es pas.",
+        "comment": [
+          "Vérifie que ton revenu fiscal de référence N-2 respecte le plafond en vigueur",
+          "Simule les deux options : sans versement libératoire, un revenu faible n'est souvent pas imposé du tout",
+          "Si tu optes, la demande se fait depuis ton espace URSSAF"
+        ],
+        "aPreparer": [
+          "Dernier avis d'imposition du foyer"
+        ],
+        "cout": "Gratuit",
+        "lien": "https://www.autoentrepreneur.urssaf.fr"
+      },
+      {
+        "id": "registre",
+        "titre": "Ouvrir le registre des recettes",
+        "quand": "Dès la première course",
+        "delaiJours": null,
+        "critique": false,
+        "pourquoi": "Obligation comptable du régime micro : tenir la liste chronologique de toutes les recettes encaissées. C'est le document réclamé en cas de contrôle.",
+        "comment": [
+          "L'application le tient automatiquement à partir de tes courses",
+          "Exporte-le au moins une fois par trimestre depuis l'écran Statut",
+          "Conserve les exports au moins 6 ans"
+        ],
+        "aPreparer": [],
+        "cout": "Gratuit",
+        "lien": null
+      }
+    ],
+    "obligations": [
+      {
+        "id": "decl_ca",
+        "titre": "Déclarer le chiffre d'affaires",
+        "frequence": "Chaque mois ou chaque trimestre",
+        "description": "Sur autoentrepreneur.urssaf.fr, tu saisis le CA encaissé sur la période, arrondi à l'euro. Obligatoire même à zéro.",
+        "lien": "https://www.autoentrepreneur.urssaf.fr"
+      },
+      {
+        "id": "decl_revenus",
+        "titre": "Déclarer les revenus annuels",
+        "frequence": "Chaque année, au printemps",
+        "description": "Formulaire 2042-C-PRO joint à la déclaration de revenus du foyer. Tu reportes le CA annuel brut : l'administration applique elle-même l'abattement forfaitaire.",
+        "lien": "https://www.impots.gouv.fr"
+      },
+      {
+        "id": "cfe",
+        "titre": "Payer la CFE",
+        "frequence": "Chaque année, au 15 décembre",
+        "description": "Cotisation foncière des entreprises. Exonérée l'année de la création, et sous condition de chiffre d'affaires les années suivantes.",
+        "lien": "https://www.impots.gouv.fr"
+      },
+      {
+        "id": "registre_tenue",
+        "titre": "Tenir le registre des recettes",
+        "frequence": "En continu",
+        "description": "Liste chronologique des encaissements, à conserver 6 ans. L'application le génère à partir de tes courses.",
+        "lien": null
+      }
+    ],
+    "fiches": [
+      {
+        "terme": "Chiffre d'affaires encaissé",
+        "texte": "L'argent réellement reçu sur la période, pas celui facturé. En livraison, c'est ce que la plateforme t'a versé, pourboires compris. C'est cette base que l'URSSAF utilise, sans déduire aucun frais."
+      },
+      {
+        "terme": "Cotisations sociales",
+        "texte": "Un pourcentage du chiffre d'affaires encaissé, prélevé à chaque déclaration. Elles financent ta retraite, ta santé et tes indemnités journalières. Elles portent sur le CA et non sur ton bénéfice : c'est la logique du régime micro."
+      },
+      {
+        "terme": "Abattement forfaitaire",
+        "texte": "Pour l'impôt, l'administration retire d'office un pourcentage de ton CA, censé représenter tes frais. En prestations de services BIC, c'est 50 %. Conséquence directe : tes frais réels ne se déduisent pas. Les suivre sert à connaître ta rentabilité, pas à baisser ton impôt."
+      },
+      {
+        "terme": "Franchise en base de TVA",
+        "texte": "Tant que tu restes sous le seuil, tu ne factures pas de TVA et tu n'as aucune déclaration de TVA à faire. En contrepartie, tu ne récupères pas la TVA sur tes achats."
+      },
+      {
+        "terme": "Versement libératoire",
+        "texte": "Option qui te fait payer l'impôt sur le revenu par petits acomptes en même temps que les cotisations, à un taux fixe. Avantageux seulement si tu es réellement imposable ; sinon tu paies un impôt que tu ne devais pas."
+      },
+      {
+        "terme": "SIRET et code APE",
+        "texte": "Le SIRET identifie ton entreprise, le code APE décrit ton activité. Pour la livraison de repas, c'est le 5320Z. Le code APE n'a pas de portée juridique en lui-même mais conditionne certains formulaires."
+      },
+      {
+        "terme": "Registre des recettes",
+        "texte": "La seule comptabilité exigée en micro : une liste chronologique des encaissements avec date, origine, montant et mode de paiement. À conserver six ans."
+      },
+      {
+        "terme": "CFE",
+        "texte": "Cotisation foncière des entreprises, un impôt local dû même sans local professionnel. Tu en es exonéré l'année de création, puis sous condition de chiffre d'affaires."
+      }
+    ]
+  };
+
+  let current = null;
+  let origin = 'integre';   // 'import' | 'dépôt' | 'secours'
+
+  /* ── Validation ───────────────────────── */
+
+  /* On refuse un fichier plutôt que de laisser l'app
+     tourner sur des valeurs incohérentes. */
+  function validate(obj) {
+    const errs = [];
+
+    if (!obj || typeof obj !== 'object') { errs.push('Le fichier ne contient pas d\'objet JSON.'); return errs; }
+    if (obj.schema !== 1) errs.push(`Version de schéma non reconnue (attendu 1, reçu ${obj.schema}).`);
+    if (!Array.isArray(obj.regimes) || !obj.regimes.length) errs.push('Aucun régime défini.');
+
+    (obj.regimes || []).forEach((r, i) => {
+      const at = `Régime ${i + 1}`;
+      if (!r.id)    errs.push(`${at} : identifiant manquant.`);
+      if (!r.label) errs.push(`${at} : libellé manquant.`);
+      ['cotisation', 'abattement', 'plafondCA'].forEach(k => {
+        if (typeof r[k] !== 'number' || r[k] < 0) errs.push(`${at} : « ${k} » doit être un nombre positif.`);
+      });
+      if (r.cotisation > 100) errs.push(`${at} : taux de cotisation supérieur à 100 %.`);
+      if (r.abattement > 100) errs.push(`${at} : abattement supérieur à 100 %.`);
+    });
+
+    if (!obj.declaration || typeof obj.declaration !== 'object') errs.push('Bloc « declaration » manquant.');
+    else if (!Array.isArray(obj.declaration.echeancesTrimestrielles)) errs.push('Échéances trimestrielles manquantes.');
+
+    ['parcours', 'obligations', 'fiches'].forEach(k => {
+      if (obj[k] != null && !Array.isArray(obj[k])) errs.push(`« ${k} » doit être une liste.`);
+    });
+
+    return errs;
+  }
+
+  function normalize(obj) {
+    const o = JSON.parse(JSON.stringify(obj));
+    o.parcours    = o.parcours    || [];
+    o.obligations = o.obligations || [];
+    o.fiches      = o.fiches      || [];
+    o.acre        = o.acre        || FALLBACK.acre;
+    o.plafonds    = o.plafonds    || FALLBACK.plafonds;
+    o.sources     = o.sources     || [];
+    return o;
+  }
+
+  /* ── Chargement ───────────────────────── */
+  async function init() {
+    // 1. Un fichier importé prime toujours.
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (!validate(parsed).length) {
+          current = normalize(parsed);
+          origin = 'import';
+          return current;
+        }
+      }
+    } catch (e) { /* import corrompu : on continue */ }
+
+    // 2. Le fichier livré avec le dépôt.
+    try {
+      const res = await fetch('reglementation.json', { cache: 'no-cache' });
+      if (res.ok) {
+        const parsed = await res.json();
+        if (!validate(parsed).length) {
+          current = normalize(parsed);
+          origin = 'dépôt';
+          return current;
+        }
+      }
+    } catch (e) { /* hors ligne au tout premier lancement */ }
+
+    // 3. Secours.
+    current = normalize(FALLBACK);
+    origin = 'integre';
+    return current;
+  }
+
+  /* ── Import utilisateur ───────────────── */
+  function apply(text) {
+    let parsed;
+    try {
+      parsed = typeof text === 'string' ? JSON.parse(text) : text;
+    } catch (e) {
+      throw new Error('Le fichier n\'est pas du JSON valide.');
+    }
+    const errs = validate(parsed);
+    if (errs.length) throw new Error(errs.slice(0, 3).join('\n'));
+
+    localStorage.setItem(KEY, JSON.stringify(parsed));
+    current = normalize(parsed);
+    origin = 'import';
+    return current;
+  }
+
+  function reset() {
+    localStorage.removeItem(KEY);
+  }
+
+  /* ── Lecture ──────────────────────────── */
+  function all() { return current || normalize(FALLBACK); }
+
+  function regimes() { return all().regimes; }
+
+  function regime(id) {
+    const list = regimes();
+    return list.find(r => r.id === id) || list.find(r => r.defaut) || list[0];
+  }
+
+
+  /* Taux réellement appliqué : le régime, minoré par l'ACRE
+     si elle est active. Une seule source de vérité. */
+  function effectiveCotisation(regimeId, acreActive) {
+    const r = regime(regimeId);
+    const a = all().acre || {};
+    if (!acreActive || !a.exonerationPct) return r.cotisation;
+    return Math.round(r.cotisation * (1 - a.exonerationPct / 100) * 10) / 10;
+  }
+
+  function abattement(regimeId) { return regime(regimeId).abattement; }
+
+  function meta() {
+    const a = all();
+    return {
+      version: a.version,
+      verifiedOn: a.verifiedOn,
+      label: a.label,
+      sources: a.sources,
+      origin,
+      ageDays: a.verifiedOn ? Math.floor((Date.now() - new Date(a.verifiedOn)) / 86400000) : null
+    };
+  }
+
+  /* Un barème de plus d'un an mérite un coup d'œil :
+     les taux du régime micro sont révisés chaque janvier. */
+  function isStale() {
+    const m = meta();
+    return m.ageDays == null || m.ageDays > 365;
+  }
+
+  return { init, apply, reset, validate, all, regimes, regime,
+           effectiveCotisation, abattement, meta, isStale, FALLBACK };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   calc.js — toute l'arithmétique de l'app
+   Un seul endroit pour l'argent : si un chiffre
+   est faux, c'est ici qu'il faut regarder.
+   ═══════════════════════════════════════════ */
+
+const Calc = (() => {
+
+  /* ── Formatage ────────────────────────── */
+  function eur(n, decimals = 2) {
+    if (n == null || isNaN(n)) return '—';
+    return n.toFixed(decimals).replace('.', ',');
+  }
+
+  function km(n) {
+    if (n == null || isNaN(n)) return '—';
+    return n.toFixed(2).replace('.', ',');
+  }
+
+  function hms(ms) {
+    if (!ms || ms < 0) ms = 0;
+    const t = Math.floor(ms / 1000);
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const s = t % 60;
+    const pad = v => String(v).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }
+
+  function hoursLabel(ms) {
+    const h = ms / 3600000;
+    if (h < 1) return Math.round(ms / 60000) + ' min';
+    return (Math.round(h * 10) / 10).toString().replace('.', ',') + ' h';
+  }
+
+  function dayLabel(ts) {
+    const d = new Date(ts);
+    const today = new Date();
+    const yest = new Date(Date.now() - 86400000);
+    const same = (a, b) => a.toDateString() === b.toDateString();
+    if (same(d, today)) return "Aujourd'hui";
+    if (same(d, yest))  return 'Hier';
+    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+  }
+
+  function clock(ts) {
+    return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ── Économie d'une course ────────────── */
+
+  /* Le brut d'une course = prix payé par la plateforme + pourboire.
+     Le net déduit les cotisations sociales (assises sur le CA
+     encaissé, pas sur le bénéfice) et le coût kilométrique réel. */
+  function courseNet(course, s) {
+    const gross = (course.amount || 0) + (course.tip || 0);
+    const social = gross * (s.cotisationRate / 100);
+    const vehicle = (course.km || 0) * s.costPerKm;
+    return {
+      gross,
+      social,
+      vehicle,
+      net: gross - social - vehicle,
+      perKm: course.km > 0 ? gross / course.km : null
+    };
+  }
+
+  /* Verdict avant acceptation. On raisonne sur le net estimé
+     ramené à l'heure, parce que c'est le seul chiffre qui
+     permet de comparer deux offres de longueurs différentes. */
+  function judge(amount, kmDist, s) {
+    if (!amount || !kmDist || kmDist <= 0) return null;
+
+    const perKm = amount / kmDist;
+    const social = amount * (s.cotisationRate / 100);
+    const vehicle = kmDist * s.costPerKm;
+    const net = amount - social - vehicle;
+
+    // Distance réellement parcourue : aller, plus le retour si l'option est active.
+    const traveled = s.countReturn ? kmDist * 1.5 : kmDist;
+    const minutes = (traveled / s.avgSpeed) * 60 + 4; // +4 min de prise en charge au resto
+    const perHour = net / (minutes / 60);
+
+    let level;
+    if (amount < s.minFare || perKm < s.thresholdPerKm * 0.85) level = 'no';
+    else if (perKm < s.thresholdPerKm || perHour < s.hourlyGoal) level = 'mid';
+    else level = 'go';
+
+    const word = level === 'go' ? 'À prendre'
+               : level === 'mid' ? 'Limite'
+               : 'À laisser';
+
+    return { perKm, net, social, vehicle, minutes, perHour, level, word };
+  }
+
+  /* ── Agrégats ─────────────────────────── */
+  function summarize(courses, s, elapsedMs) {
+    const t = { n: courses.length, gross: 0, social: 0, vehicle: 0, net: 0, km: 0, provision: 0 };
+
+    courses.forEach(c => {
+      const r = courseNet(c, s);
+      t.gross   += r.gross;
+      t.social  += r.social;
+      t.vehicle += r.vehicle;
+      t.net     += r.net;
+      t.km      += c.km || 0;
+    });
+
+    t.provision = t.gross * (s.provisionRate / 100);
+    t.perKm     = t.km > 0 ? t.gross / t.km : null;
+    t.avg       = t.n > 0 ? t.gross / t.n : null;
+
+    if (elapsedMs && elapsedMs > 60000) {
+      const h = elapsedMs / 3600000;
+      t.netPerHour   = t.net / h;
+      t.grossPerHour = t.gross / h;
+      t.perHourGap   = t.netPerHour - s.hourlyGoal;
+    } else {
+      t.netPerHour = null;
+      t.grossPerHour = null;
+      t.perHourGap = null;
+    }
+    return t;
+  }
+
+  /* Durée totale travaillée sur un ensemble de shifts. */
+  function workedMs(sessions) {
+    return sessions.reduce((sum, s) => sum + ((s.end || Date.now()) - s.start), 0);
+  }
+
+  function sameDay(ts, ref) {
+    const a = new Date(ts), b = new Date(ref);
+    return a.getFullYear() === b.getFullYear()
+        && a.getMonth() === b.getMonth()
+        && a.getDate() === b.getDate();
+  }
+
+  function todayCourses(courses) {
+    const now = Date.now();
+    return courses.filter(c => sameDay(c.start, now));
+  }
+
+  function todaySessions(sessions) {
+    const now = Date.now();
+    return sessions.filter(s => sameDay(s.start, now));
+  }
+
+  /* ── Analyse des créneaux ─────────────── */
+
+  /* Regroupe le net par heure de la journée, pour révéler
+     les créneaux qui rapportent vraiment. */
+  function byHour(courses, s) {
+    const buckets = Array.from({ length: 24 }, () => ({ net: 0, n: 0 }));
+    courses.forEach(c => {
+      const h = new Date(c.start).getHours();
+      buckets[h].net += courseNet(c, s).net;
+      buckets[h].n++;
+    });
+    return buckets;
+  }
+
+  function byWeekday(courses, s) {
+    // 0 = lundi … 6 = dimanche
+    const names = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    const buckets = names.map(name => ({ name, net: 0, n: 0 }));
+    courses.forEach(c => {
+      const js = new Date(c.start).getDay();      // 0 = dimanche
+      const idx = (js + 6) % 7;                   // → 0 = lundi
+      buckets[idx].net += courseNet(c, s).net;
+      buckets[idx].n++;
+    });
+    return buckets;
+  }
+
+  function sinceDays(courses, days) {
+    if (days >= 9999) return courses.slice();
+    const cut = Date.now() - days * 86400000;
+    return courses.filter(c => c.start >= cut);
+  }
+
+  /* ── Distance ─────────────────────────── */
+
+  /* Haversine — distance à vol d'oiseau entre deux points GPS.
+     Sur des segments courts (une poignée de secondes), l'écart
+     avec la distance routière est négligeable et s'accumule bien. */
+  function haversine(a, b) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lon - a.lon);
+    const la1 = toRad(a.lat), la2 = toRad(b.lat);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+
+  /* ── Objectif de chiffre ──────────────────
+
+     Le principe : on ne fige jamais un montant journalier.
+     À chaque consultation on repart de ce qu'il reste à faire
+     et du nombre de jours travaillables restants. Une journée
+     sans course relève automatiquement les suivantes ; une
+     grosse journée les allège d'autant.
+     ──────────────────────────────────────── */
+
+  function isoDate(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+         + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function parseDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso + 'T00:00:00');
+    return isNaN(d) ? null : d;
+  }
+
+  function midnight(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+
+  /* Nombre de jours travaillables dans un intervalle, bornes incluses. */
+  function workDays(from, to, days) {
+    if (to < from) return 0;
+    let n = 0, guard = 0;
+    const cur = midnight(from), end = midnight(to);
+    while (cur <= end && guard++ < 4000) {
+      if (days.indexOf(cur.getDay()) !== -1) n++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return n;
+  }
+
+  /* Date atteinte après n jours travaillables. */
+  function addWorkDays(from, n, days) {
+    const cur = midnight(from);
+    let left = n, guard = 0;
+    if (days.indexOf(cur.getDay()) !== -1) left--;   // le jour de départ compte s'il est travaillable
+    while (left > 0 && guard++ < 4000) {
+      cur.setDate(cur.getDate() + 1);
+      if (days.indexOf(cur.getDay()) !== -1) left--;
+    }
+    return cur;
+  }
+
+  function goalStatus(courses, s) {
+    if (!s.goalEnabled || !s.goalAmount || s.goalAmount <= 0) return null;
+
+    const now = new Date();
+    const y = now.getFullYear();
+    const start = parseDate(s.goalStart) || new Date(y, 0, 1);
+    const end   = parseDate(s.goalEnd)   || new Date(y, 11, 31);
+    if (end < start) return null;
+
+    const days = (s.goalDays && s.goalDays.length) ? s.goalDays : [0, 1, 2, 3, 4, 5, 6];
+    const today = midnight(now);
+    const endMs = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59).getTime();
+
+    // Ce qui compte : brut encaissé, ou net après charges.
+    const value = c => s.goalBasis === 'net'
+      ? courseNet(c, s).net
+      : (c.amount || 0) + (c.tip || 0);
+
+    const inRange = courses.filter(c => c.start >= start.getTime() && c.start <= endMs);
+    const done = inRange.reduce((sum, c) => sum + value(c), 0);
+
+    const remain = Math.max(0, s.goalAmount - done);
+    const pct = Math.min(100, (done / s.goalAmount) * 100);
+    const reached = done >= s.goalAmount;
+    const finished = today.getTime() > end.getTime();
+
+    // Jours restants, aujourd'hui compris s'il est travaillable.
+    const fromDay = today < start ? start : today;
+    const daysLeft = finished ? 0 : workDays(fromDay, end, days);
+    const perDay = (!finished && !reached && daysLeft > 0) ? remain / daysLeft : null;
+
+    // Où l'on devrait en être si le rythme avait été régulier.
+    const totalDays = workDays(start, end, days);
+    const elapsed = today <= start ? 0
+      : workDays(start, new Date(Math.min(today.getTime() - 86400000, end.getTime())), days);
+    const expected = totalDays > 0 ? s.goalAmount * elapsed / totalDays : 0;
+    const ahead = done - expected;
+
+    // Aujourd'hui
+    const isWorkDay = days.indexOf(today.getDay()) !== -1;
+    const todayDone = inRange.filter(c => sameDay(c.start, now)).reduce((sum, c) => sum + value(c), 0);
+    const todayTarget = (isWorkDay && perDay != null) ? perDay : 0;
+    const todayLeft = Math.max(0, todayTarget - todayDone);
+    const todayPct = todayTarget > 0 ? Math.min(100, (todayDone / todayTarget) * 100) : (todayDone > 0 ? 100 : 0);
+
+    // Projection au rythme réellement tenu jusqu'ici.
+    const workedDates = {};
+    inRange.forEach(c => { workedDates[new Date(c.start).toDateString()] = 1; });
+    const nbWorked = Object.keys(workedDates).length;
+    const avgPerWorkedDay = nbWorked ? done / nbWorked : 0;
+    const projection = done + avgPerWorkedDay * daysLeft;
+
+    let etaDate = null;
+    if (!reached && avgPerWorkedDay > 0) {
+      const need = Math.ceil(remain / avgPerWorkedDay);
+      if (need <= 3000) etaDate = addWorkDays(fromDay, need, days);
+    }
+
+    return {
+      amount: s.goalAmount, basis: s.goalBasis, start, end, days,
+      done, remain, pct, reached, finished,
+      daysLeft, totalDays, elapsed, perDay,
+      expected, ahead,
+      isWorkDay, todayDone, todayTarget, todayLeft, todayPct,
+      nbWorked, avgPerWorkedDay, projection, etaDate,
+      atteignable: etaDate ? etaDate.getTime() <= end.getTime() : null
+    };
+  }
+
+  return {
+    eur, km, hms, hoursLabel, dayLabel, clock,
+    goalStatus, workDays, isoDate, parseDate,
+    courseNet, judge, summarize, workedMs,
+    todayCourses, todaySessions, sameDay,
+    byHour, byWeekday, sinceDays, haversine
+  };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   tracker.js — GPS, carte et distance
+   ═══════════════════════════════════════════ */
+
+const Tracker = (() => {
+
+  let map = null;
+  let meMarker = null;
+  let trail = null;
+
+  let watchId = null;
+  let wakeLock = null;
+
+  let lastFix = null;      // dernier point retenu
+  let distance = 0;        // mètres cumulés sur la course en cours
+  let recording = false;
+  let followMe = true;
+
+  const listeners = [];
+
+  /* Filtres anti-dérive. Un GPS immobile « saute » de
+     quelques mètres en permanence ; sans ces garde-fous
+     on facturerait des kilomètres fantômes. */
+  const MAX_ACCURACY = 35;   // m — au-delà, le point est ignoré
+  const MIN_STEP     = 6;    // m — en-dessous, c'est du bruit
+  const MAX_SPEED    = 35;   // m/s — au-delà, c'est une aberration
+
+  function on(fn) { listeners.push(fn); }
+  function emit() { listeners.forEach(fn => fn({ distance, lastFix, recording })); }
+
+  /* ── Carte ────────────────────────────── */
+
+  /* La carte est un confort, pas une dépendance : si la
+     bibliothèque ou les tuiles ne répondent pas, tout le
+     reste de l'application continue de fonctionner. */
+
+  let tileErrors = 0;
+  let tilesOk = 0;
+  let mapState = 'en attente';
+  let retries = 0;
+
+  const TILE_SOURCES = [
+    { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', nom: 'CARTO' },
+    { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; OpenStreetMap', subdomains: 'abc', nom: 'OpenStreetMap' }
+  ];
+  let sourceIndex = 0;
+  let tileLayer = null;
+
+  function mapNotice(txt) {
+    const el = document.getElementById('map-notice');
+    if (!el) return;
+    if (!txt) { el.hidden = true; return; }
+    el.textContent = txt;
+    el.hidden = false;
+  }
+
+  function addTiles() {
+    const src = TILE_SOURCES[sourceIndex];
+    if (tileLayer) map.removeLayer(tileLayer);
+    tileErrors = 0;
+    tileLayer = L.tileLayer(src.url, {
+      attribution: src.attribution, maxZoom: 19, subdomains: src.subdomains, crossOrigin: true
+    });
+    tileLayer.on('load', () => { tilesOk++; mapState = 'carte ' + src.nom; mapNotice(''); });
+    tileLayer.on('tileload', () => { tilesOk++; mapNotice(''); });
+    tileLayer.on('tileerror', () => {
+      tileErrors++;
+      // Deux sources tentées : au-delà, on cesse d'insister.
+      if (tileErrors === 6 && sourceIndex < TILE_SOURCES.length - 1) {
+        sourceIndex++;
+        mapNotice('Fond de carte indisponible, tentative sur une autre source…');
+        addTiles();
+      } else if (tileErrors > 12 && tilesOk === 0) {
+        mapState = 'tuiles injoignables';
+        mapNotice("Fond de carte injoignable. Le suivi GPS et les kilomètres fonctionnent quand même.");
+      }
+    });
+    tileLayer.addTo(map);
+  }
+
+  function initMap() {
+    if (map) return;
+
+    // La bibliothèque peut arriver après le premier appel :
+    // on retente quelques fois avant d'abandonner.
+    if (typeof L === 'undefined') {
+      if (retries++ < 12) { setTimeout(initMap, 500); mapState = 'chargement…'; return; }
+      mapState = 'bibliothèque non chargée';
+      mapNotice("La carte n'a pas pu être chargée. Tout le reste de l'application fonctionne : le GPS mesure les kilomètres normalement.");
+      return;
+    }
+
+    try {
+      map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true })
+             .setView([46.6, 2.4], 5);   // France, remplacé au premier point GPS
+
+      addTiles();
+
+      trail = L.polyline([], { color: '#FFB627', weight: 5, opacity: .9,
+                               lineJoin: 'round', lineCap: 'round' }).addTo(map);
+
+      const icon = L.divIcon({ className: '', html: '<div class="me-dot"></div>',
+                               iconSize: [16, 16], iconAnchor: [8, 8] });
+      meMarker = L.marker([46.6, 2.4], { icon, interactive: false }).addTo(map);
+
+      map.on('dragstart', () => { followMe = false; });
+      mapState = 'prête';
+    } catch (e) {
+      mapState = 'erreur : ' + e.message;
+      mapNotice("La carte n'a pas pu s'afficher. Le reste de l'application fonctionne normalement.");
+    }
+  }
+
+  function recenter() {
+    followMe = true;
+    if (map && lastFix) map.setView([lastFix.lat, lastFix.lon], 16, { animate: true });
+  }
+
+  function invalidate() {
+    if (map) setTimeout(() => map.invalidateSize(), 60);
+  }
+
+  /* ── Suivi de position ────────────────── */
+  function onFix(pos) {
+    const fix = {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      acc: pos.coords.accuracy,
+      t: pos.timestamp
+    };
+
+    if (meMarker) meMarker.setLatLng([fix.lat, fix.lon]);
+    if (map && followMe) map.setView([fix.lat, fix.lon], Math.max(map.getZoom(), 16), { animate: true });
+
+    if (fix.acc != null && fix.acc > MAX_ACCURACY) { lastFix = lastFix || fix; return; }
+
+    if (recording && lastFix) {
+      const d = Calc.haversine(lastFix, fix);
+      const dt = Math.max((fix.t - lastFix.t) / 1000, 0.5);
+      const speed = d / dt;
+      if (d >= MIN_STEP && speed <= MAX_SPEED) {
+        distance += d;
+        if (trail) trail.addLatLng([fix.lat, fix.lon]);
+        lastFix = fix;
+        emit();
+        return;
+      }
+      if (d < MIN_STEP) return;      // on garde l'ancien point de référence
+    }
+
+    lastFix = fix;
+    emit();
+  }
+
+  function onFixError(err) {
+    const el = document.getElementById('gps-warn');
+    if (!el) return;
+    const msg = err.code === 1
+      ? "Localisation refusée. Autorise-la dans les réglages du navigateur pour que les kilomètres se comptent tout seuls."
+      : "Signal GPS indisponible pour l'instant. Tu peux saisir les kilomètres à la main.";
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  function startWatch() {
+    if (watchId != null || !navigator.geolocation) return;
+    const el = document.getElementById('gps-warn');
+    if (el) el.hidden = true;
+    watchId = navigator.geolocation.watchPosition(onFix, onFixError, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 20000
+    });
+  }
+
+  function stopWatch() {
+    if (watchId != null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+  }
+
+  /* ── Enregistrement d'une course ──────── */
+  function beginCourse() {
+    distance = 0;
+    recording = true;
+    if (trail) trail.setLatLngs(lastFix ? [[lastFix.lat, lastFix.lon]] : []);
+    requestWakeLock();
+    emit();
+  }
+
+  function endCourse() {
+    recording = false;
+    releaseWakeLock();
+    const km = distance / 1000;
+    distance = 0;
+    emit();
+    return km;
+  }
+
+  function currentKm() { return distance / 1000; }
+
+  /* ── Écran allumé ─────────────────────── */
+  async function requestWakeLock() {
+    if (!Store.settings().keepAwake) return;
+    try {
+      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) { /* refusé ou non supporté : sans conséquence */ }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && recording) requestWakeLock();
+  });
+
+  /* Remonte l'état réel de la carte et du GPS, pour que
+     l'écran Réglages puisse le montrer sans deviner. */
+  function diagnostic() {
+    return {
+      leaflet: typeof L !== 'undefined',
+      carte: mapState,
+      tuilesChargees: tilesOk,
+      tuilesEnEchec: tileErrors,
+      source: TILE_SOURCES[sourceIndex] ? TILE_SOURCES[sourceIndex].nom : '—',
+      gpsSuivi: watchId != null,
+      dernierPoint: lastFix ? { precision: Math.round(lastFix.acc) + ' m',
+                                a: new Date(lastFix.t).toLocaleTimeString('fr-FR') } : null,
+      enregistrement: recording,
+      distanceCourante: (distance / 1000).toFixed(2) + ' km'
+    };
+  }
+
+  return {
+    initMap, recenter, invalidate, diagnostic,
+    startWatch, stopWatch,
+    beginCourse, endCourse, currentKm,
+    on,
+    hasFix: () => !!lastFix
+  };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   admin.js — écran Statut
+
+   Toutes les valeurs affichées ici viennent de
+   Rules, jamais du code. Changer la loi = changer
+   le fichier de réglementation.
+   ═══════════════════════════════════════════ */
+
+const Admin = (() => {
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+  const DAY = 86400000;
+
+  function frDate(d) {
+    return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  function frShort(d) {
+    return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  }
+  function lastDay(y, m) { return new Date(y, m + 1, 0); }
+
+  /* ── Échéancier ───────────────────────── */
+
+  /* Construit la suite des échéances à partir de la date de
+     début d'activité. La première est décalée du délai légal
+     et cumule toutes les périodes déjà écoulées. */
+  function schedule(startISO, periodicite, horizonMonths = 24) {
+    const R = Rules.all();
+    const start = new Date(startISO + 'T00:00:00');
+    if (isNaN(start)) return [];
+
+    const openAfter = new Date(start.getTime() + (R.declaration.premiereDeclarationJours || 90) * DAY);
+    const out = [];
+
+    if (periodicite === 'mensuelle') {
+      const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+      for (let i = 0; i < horizonMonths; i++) {
+        const y = cur.getFullYear(), m = cur.getMonth();
+        out.push({
+          pStart: new Date(y, m, 1),
+          pEnd: new Date(y, m + 1, 0, 23, 59, 59),
+          due: lastDay(y, m + 1),
+          label: new Date(y, m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+        });
+        cur.setMonth(m + 1);
+      }
+    } else {
+      const dues = R.declaration.echeancesTrimestrielles || [];
+      const y0 = start.getFullYear();
+      for (let y = y0; y <= y0 + Math.ceil(horizonMonths / 12); y++) {
+        for (let q = 0; q < 4; q++) {
+          const spec = dues[q] || {};
+          const [dm, dd] = String(spec.limite || '').split('-').map(Number);
+          // Le 4e trimestre se déclare en janvier de l'année suivante.
+          const dueYear = q === 3 ? y + 1 : y;
+          if (!dm || !dd) continue;
+          out.push({
+            pStart: new Date(y, q * 3, 1),
+            pEnd: new Date(y, q * 3 + 3, 0, 23, 59, 59),
+            due: new Date(dueYear, dm - 1, dd),
+            label: spec.periode ? `${spec.periode} ${y}` : `T${q + 1} ${y}`
+          });
+        }
+      }
+      out.sort((a, b) => a.due - b.due);
+    }
+
+    // On écarte les périodes antérieures au début d'activité,
+    // puis celles dont l'échéance tombe avant l'ouverture du service.
+    const kept = out.filter(e => e.pEnd >= start && e.due >= openAfter);
+    if (kept.length) {
+      kept[0].pStart = start;
+      kept[0].first = true;
+      kept[0].label = 'Première déclaration';
+    }
+    return kept;
+  }
+
+  function caBetween(from, to) {
+    return Store.courses()
+      .filter(c => c.start >= from.getTime() && c.start <= to.getTime())
+      .reduce((s, c) => s + (c.amount || 0) + (c.tip || 0), 0);
+  }
+
+  /* ── Plafonds ─────────────────────────── */
+  function ceilings() {
+    const s = Store.settings();
+    const R = Rules.all();
+    const reg = Rules.regime(s.regimeId);
+    const now = new Date();
+    const y = now.getFullYear();
+
+    const yearStart = new Date(y, 0, 1);
+    const yearEnd = new Date(y, 11, 31, 23, 59, 59);
+    const ca = caBetween(yearStart, yearEnd);
+
+    let plafond = reg.plafondCA;
+    let prorata = false;
+    if (s.dateDebut && R.plafonds && R.plafonds.prorataPremiereAnnee) {
+      const d = new Date(s.dateDebut + 'T00:00:00');
+      if (!isNaN(d) && d.getFullYear() === y) {
+        const days = Math.round((yearEnd - d) / DAY) + 1;
+        plafond = Math.round(reg.plafondCA * days / 365);
+        prorata = true;
+      }
+    }
+    return { ca, plafond, prorata, tvaBase: reg.tvaBase, tvaMajore: reg.tvaMajore, year: y, regime: reg };
+  }
+
+  function gauge(value, max, tone) {
+    const pct = Math.min(100, max > 0 ? (value / max) * 100 : 0);
+    return `<div class="gauge"><div class="gauge__fill ${tone}" style="width:${pct.toFixed(1)}%"></div></div>`;
+  }
+
+  /* ── Registre des recettes ────────────── */
+  function registreCSV() {
+    const rows = [['Date', 'Reference', 'Origine', 'Montant TTC', 'Dont pourboire', 'Mode encaissement']];
+    Store.courses().slice().sort((a, b) => a.start - b.start).forEach((c, i) => {
+      rows.push([
+        new Date(c.start).toLocaleDateString('fr-FR'),
+        'C' + String(i + 1).padStart(5, '0'),
+        (c.platform || '').replace(/;/g, ' '),
+        ((c.amount || 0) + (c.tip || 0)).toFixed(2).replace('.', ','),
+        (c.tip || 0).toFixed(2).replace('.', ','),
+        'Virement plateforme'
+      ]);
+    });
+    return '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');
+  }
+
+  function download(name, content, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /* ── Rendu ────────────────────────────── */
+  function render() {
+    const s = Store.settings();
+    const R = Rules.all();
+    const m = Rules.meta();
+    const box = $('admin-body');
+    const done = Store.checklist();
+
+    const staleWarn = Rules.isStale()
+      ? `<div class="banner banner--warn">
+           <b>Barème à vérifier.</b> ${m.verifiedOn ? `Il date du ${frDate(m.verifiedOn)}.` : 'Sa date de vérification est inconnue.'}
+           Les taux du régime micro sont révisés chaque janvier. Mets le fichier à jour depuis les réglages.
+         </div>` : '';
+
+    /* — Bloc identité de l'activité — */
+    const regOpts = Rules.regimes().map(r =>
+      `<option value="${esc(r.id)}"${s.regimeId === r.id ? ' selected' : ''}>${esc(r.label)}</option>`).join('');
+
+    const effRate = Rules.effectiveCotisation(s.regimeId, s.acreActive);
+    const reg = Rules.regime(s.regimeId);
+
+    const identite = `
+      <div class="card">
+        <p class="card__h">Ton activité</p>
+        <label class="field"><span>Date de début d'activité</span>
+          <input type="date" id="adm-date" value="${esc(s.dateDebut || '')}"></label>
+        <label class="field"><span>Régime</span><select id="adm-regime">${regOpts}</select></label>
+        ${reg.aide ? `<p class="hint" style="margin:-6px 0 12px">${esc(reg.aide)}</p>` : ''}
+        <label class="field"><span>Périodicité de déclaration</span>
+          <select id="adm-period">
+            <option value="mensuelle"${s.periodicite === 'mensuelle' ? ' selected' : ''}>Mensuelle</option>
+            <option value="trimestrielle"${s.periodicite === 'trimestrielle' ? ' selected' : ''}>Trimestrielle</option>
+          </select></label>
+        <div class="switchrow">
+          <div><div class="switchrow__t">ACRE en cours</div>
+            <div class="switchrow__s">Exonération de ${R.acre.exonerationPct} % pendant ${R.acre.dureeMois} mois.</div></div>
+          <button class="switch${s.acreActive ? ' on' : ''}" id="adm-acre" aria-label="ACRE"></button>
+        </div>
+        <div class="row"><div class="row__l"><div class="row__t">Taux de cotisations appliqué</div>
+          <div class="row__s">${esc(reg.label)}${s.acreActive ? ' avec ACRE' : ''}</div></div>
+          <div class="row__r" style="color:var(--sodium)">${Calc.eur(effRate, 1)} %</div></div>
+      </div>`;
+
+    /* — Pas encore de date : on met le parcours en avant — */
+    if (!s.dateDebut) {
+      box.innerHTML = staleWarn + `
+        <div class="banner">
+          <b>On commence par le commencement.</b> Renseigne ta date de début d'activité
+          une fois immatriculé : l'application construira alors ton échéancier toute seule.
+        </div>` + identite + parcoursHTML(R, done) + fichesHTML(R) + sourceHTML(m);
+      bind();
+      return;
+    }
+
+    /* — Échéancier — */
+    const sched = schedule(s.dateDebut, s.periodicite || 'trimestrielle');
+    const now = Date.now();
+    const next = sched.find(e => e.due.getTime() >= now - DAY);
+    const late = sched.filter(e => e.due.getTime() < now - DAY).slice(-3);
+
+    let echHTML = '';
+    if (next) {
+      const ca = caBetween(next.pStart, next.pEnd);
+      const days = Math.ceil((next.due.getTime() - now) / DAY);
+      const cot = ca * effRate / 100;
+      const urgent = days <= 7;
+
+      echHTML = `
+        <div class="card ${urgent ? 'card--urgent' : ''}">
+          <p class="card__h">Prochaine déclaration</p>
+          <div class="deadline">
+            <div>
+              <div class="deadline__d">${frDate(next.due)}</div>
+              <div class="deadline__s">${next.first ? 'Première déclaration' : esc(next.label)} · ${frShort(next.pStart)} au ${frShort(next.pEnd)}</div>
+            </div>
+            <span class="pill ${urgent ? 'pill--warn' : ''}">${days <= 0 ? "aujourd'hui" : 'dans ' + days + ' j'}</span>
+          </div>
+
+          <div class="copybox">
+            <div class="copybox__k">Montant à saisir sur l'URSSAF</div>
+            <div class="copybox__v" id="ca-value">${Math.round(ca)} €</div>
+            <button class="btn btn--ghost" id="btn-copy-ca">Copier le montant</button>
+          </div>
+
+          <div class="row"><div class="row__l"><div class="row__t">Cotisations estimées</div>
+            <div class="row__s">${Calc.eur(effRate, 1)} % du chiffre d'affaires</div></div>
+            <div class="row__r">${Calc.eur(cot)} €</div></div>
+          <div class="row"><div class="row__l"><div class="row__t">Courses sur la période</div></div>
+            <div class="row__r">${Store.courses().filter(c => c.start >= next.pStart.getTime() && c.start <= next.pEnd.getTime()).length}</div></div>
+
+          <p class="hint">Le montant est arrondi à l'euro, comme le demande le formulaire. ${R.declaration.obligatoireSiZero ? 'La déclaration reste obligatoire même à zéro : une absence coûte ' + Calc.eur(R.declaration.penaliteRetard) + ' € de pénalité.' : ''}</p>
+          <a class="btn btn--go" href="${esc(R.declaration.lien || '#')}" style="text-align:center;text-decoration:none;display:block;margin-top:10px">Ouvrir mon espace URSSAF</a>
+        </div>`;
+    }
+
+    if (late.length) {
+      echHTML += `<div class="card">
+        <p class="card__h">Échéances passées</p>
+        ${late.map(e => {
+          const ca = caBetween(e.pStart, e.pEnd);
+          return `<div class="row"><div class="row__l"><div class="row__t">${esc(e.label)}</div>
+            <div class="row__s">échéance du ${frShort(e.due)}</div></div>
+            <div class="row__r">${Math.round(ca)} €</div></div>`;
+        }).join('')}
+        <p class="hint">Montants recalculés depuis tes courses. Ils servent de contrôle : compare-les à ce que tu as réellement déclaré.</p>
+      </div>`;
+    }
+
+    /* — Plafonds — */
+    const c = ceilings();
+    const pctPlafond = c.plafond > 0 ? (c.ca / c.plafond) * 100 : 0;
+    const pctTva = c.tvaBase > 0 ? (c.ca / c.tvaBase) * 100 : 0;
+
+    const plafHTML = `
+      <div class="card">
+        <p class="card__h">Où tu en es sur ${c.year}</p>
+
+        <div class="meter">
+          <div class="meter__top"><span>Plafond du régime micro</span><b>${Math.round(c.ca).toLocaleString('fr-FR')} / ${c.plafond.toLocaleString('fr-FR')} €</b></div>
+          ${gauge(c.ca, c.plafond, pctPlafond > 90 ? 'bad' : pctPlafond > 70 ? 'warn' : 'ok')}
+          <div class="meter__s">${c.prorata ? 'Proratisé sur ta première année d\'activité.' : ''} ${R.plafonds.sortieApresAnnees ? `Il faut ${R.plafonds.sortieApresAnnees} années consécutives au-dessus pour sortir du régime.` : ''}</div>
+        </div>
+
+        <div class="meter">
+          <div class="meter__top"><span>Seuil de franchise de TVA</span><b>${Math.round(c.ca).toLocaleString('fr-FR')} / ${c.tvaBase.toLocaleString('fr-FR')} €</b></div>
+          ${gauge(c.ca, c.tvaBase, pctTva > 90 ? 'bad' : pctTva > 70 ? 'warn' : 'ok')}
+          <div class="meter__s">Au-delà de ${c.tvaMajore.toLocaleString('fr-FR')} € la TVA s'applique dès le jour du dépassement.</div>
+        </div>
+      </div>`;
+
+    /* — Registre — */
+    const regHTML = `
+      <div class="card">
+        <p class="card__h">Registre des recettes</p>
+        <p class="hint" style="margin:0 0 12px">La seule comptabilité exigée en micro-entreprise : la liste chronologique de tes encaissements. L'application la tient à partir de tes courses. Exporte-la chaque trimestre et garde les fichiers six ans.</p>
+        <div class="row"><div class="row__l"><div class="row__t">Lignes enregistrées</div></div>
+          <div class="row__r">${Store.courses().length}</div></div>
+        <button class="btn btn--ghost" id="btn-registre" style="margin-top:12px">Exporter le registre (CSV)</button>
+      </div>`;
+
+    box.innerHTML = staleWarn + echHTML + plafHTML + identite
+      + parcoursHTML(R, done) + obligationsHTML(R) + regHTML + fichesHTML(R) + sourceHTML(m);
+    bind();
+  }
+
+  /* — Parcours de démarrage — */
+  function parcoursHTML(R, done) {
+    if (!R.parcours.length) return '';
+    const s = Store.settings();
+    const concernees = R.parcours.filter(p => !done[p.id] || done[p.id].s !== 'na');
+    const total = concernees.length;
+    const nb = concernees.filter(p => done[p.id] && done[p.id].s === 'fait').length;
+
+    return `<div class="card">
+      <p class="card__h">Démarches de création — ${nb} sur ${total}</p>
+      ${R.parcours.map(p => {
+        const etat = done[p.id] ? done[p.id].s : null;
+        const ok = etat === 'fait';
+        const na = etat === 'na';
+        let deadline = '';
+        if (p.delaiJours && s.dateDebut && !ok && !na) {
+          const d = new Date(new Date(s.dateDebut + 'T00:00:00').getTime() + p.delaiJours * 86400000);
+          const left = Math.ceil((d - Date.now()) / 86400000);
+          deadline = left >= 0
+            ? `<span class="pill ${left <= 15 ? 'pill--warn' : ''}">${left} j restants</span>`
+            : `<span class="pill pill--bad">délai dépassé</span>`;
+        }
+        return `<div class="step${ok ? ' is-done' : ''}${na ? ' is-na' : ''}" data-step="${esc(p.id)}">
+          <div class="step__h">
+            <button class="check${ok ? ' on' : ''}${na ? ' na' : ''}" data-check="${esc(p.id)}" aria-label="Marquer comme fait"></button>
+            <div class="step__t">
+              <div class="step__title">${esc(p.titre)}</div>
+              <div class="step__when">${p.critique ? '<span class="tag">à ne pas rater</span>' : ''}${esc(p.quand)}</div>
+            </div>
+            ${deadline}
+          </div>
+          <div class="step__body">
+            <p class="step__why">${esc(p.pourquoi)}</p>
+            ${p.comment && p.comment.length ? `<ol class="step__list">${p.comment.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+            ${p.aPreparer && p.aPreparer.length ? `<p class="step__prep"><b>À préparer :</b> ${p.aPreparer.map(esc).join(', ')}</p>` : ''}
+            ${p.cout ? `<p class="step__prep"><b>Coût :</b> ${esc(p.cout)}</p>` : ''}
+            ${p.lien ? `<a class="btn btn--ghost" href="${esc(p.lien)}" style="text-align:center;text-decoration:none;display:block;margin-top:10px">Ouvrir le site officiel</a>` : ''}
+            <button class="step__na" data-na="${esc(p.id)}">${na ? 'Finalement, cette étape me concerne' : 'Cette étape ne me concerne pas'}</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function obligationsHTML(R) {
+    if (!R.obligations.length) return '';
+    return `<div class="card">
+      <p class="card__h">Ce qui revient chaque année</p>
+      ${R.obligations.map(o => `<div class="row">
+        <div class="row__l"><div class="row__t">${esc(o.titre)}</div>
+        <div class="row__s">${esc(o.frequence)} — ${esc(o.description)}</div></div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  function fichesHTML(R) {
+    if (!R.fiches.length) return '';
+    return `<div class="card">
+      <p class="card__h">Le vocabulaire, en clair</p>
+      ${R.fiches.map(f => `<details class="fiche"><summary>${esc(f.terme)}</summary><p>${esc(f.texte)}</p></details>`).join('')}
+    </div>`;
+  }
+
+  function sourceHTML(m) {
+    return `<p class="hint" style="text-align:center;padding:6px 0 24px">
+      Barème « ${esc(m.label)} » version ${esc(m.version)}${m.verifiedOn ? `, vérifié le ${frDate(m.verifiedOn)}` : ''}.<br>
+      Source : ${esc(m.origin)}. Ces informations sont un repère, pas un conseil juridique ou comptable.
+    </p>`;
+  }
+
+  /* ── Interactions ─────────────────────── */
+  function bind() {
+    const set = (id, key, after) => {
+      const el = $(id);
+      if (el) el.addEventListener('change', () => {
+        Store.setSetting(key, el.value);
+        if (after) after();
+        render();
+        App.toast('Enregistré');
+      });
+    };
+
+    set('adm-date', 'dateDebut');
+    set('adm-period', 'periodicite');
+    set('adm-regime', 'regimeId', syncRate);
+
+    const acre = $('adm-acre');
+    if (acre) acre.addEventListener('click', () => {
+      Store.setSetting('acreActive', !Store.settings().acreActive);
+      syncRate();
+      render();
+    });
+
+    document.querySelectorAll('[data-check]').forEach(b =>
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        Store.toggleCheck(b.dataset.check);
+        render();
+      }));
+
+    document.querySelectorAll('.step__h').forEach(h =>
+      h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+
+    document.querySelectorAll('[data-na]').forEach(b =>
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const id = b.dataset.na;
+        Store.setStep(id, Store.stepState(id) === 'na' ? null : 'na');
+        render();
+      }));
+
+    const copy = $('btn-copy-ca');
+    if (copy) copy.addEventListener('click', () => {
+      const v = $('ca-value').textContent.replace(/[^\d]/g, '');
+      navigator.clipboard?.writeText(v)
+        .then(() => App.toast('Montant copié : ' + v + ' €'))
+        .catch(() => App.toast('Montant à recopier : ' + v + ' €'));
+    });
+
+    const reg = $('btn-registre');
+    if (reg) reg.addEventListener('click', () => {
+      if (!Store.courses().length) { App.toast('Aucune course à exporter'); return; }
+      download(`registre-recettes-${new Date().toISOString().slice(0, 10)}.csv`,
+        registreCSV(), 'text/csv;charset=utf-8');
+      App.toast('Registre exporté');
+    });
+  }
+
+  /* Le taux de cotisation appliqué aux calculs de l'app
+     découle du régime et de l'ACRE : on le recalcule ici. */
+  function syncRate() {
+    const s = Store.settings();
+    Store.setSetting('cotisationRate', Rules.effectiveCotisation(s.regimeId, s.acreActive));
+  }
+
+  return { render, schedule, ceilings, registreCSV, syncRate };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   screens.js — rendu des écrans secondaires
+   ═══════════════════════════════════════════ */
+
+const Screens = (() => {
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, m =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+  function empty(title, sub) {
+    return `<div class="empty"><div class="empty__t">${title}</div><div class="empty__s">${sub}</div></div>`;
+  }
+
+  /* ══ HISTORIQUE ═══════════════════════ */
+  function history() {
+    const s = Store.settings();
+    const sessions = Store.sessions().slice().sort((a, b) => b.start - a.start);
+    const box = $('history-list');
+
+    if (!sessions.length) {
+      box.innerHTML = empty('Rien pour l\'instant',
+        'Tes shifts apparaîtront ici dès le premier terminé.');
+      return;
+    }
+
+    box.innerHTML = sessions.map(sess => {
+      const list = Store.coursesOf(sess.id);
+      const dur = (sess.end || Date.now()) - sess.start;
+      const t = Calc.summarize(list, s, dur);
+      const open = sess.end == null ? ' open' : '';
+
+      const rows = list.length ? list.map(c => {
+        const r = Calc.courseNet(c, s);
+        return `<div class="row row--tap" data-course="${c.id}">
+          <div class="row__l">
+            <div class="row__t">${Calc.clock(c.start)} · ${esc(c.platform || '')}</div>
+            <div class="row__s">${Calc.km(c.km)} km${r.perKm ? ' · ' + Calc.eur(r.perKm) + ' €/km' : ''}${c.tip ? ' · pourboire ' + Calc.eur(c.tip) + ' €' : ''}</div>
+          </div>
+          <div class="row__r">${Calc.eur(r.gross)} €</div>
+        </div>`;
+      }).join('') : '<div class="row"><div class="row__s">Aucune course sur ce shift.</div></div>';
+
+      return `<div class="sess${open}" data-sess="${sess.id}">
+        <div class="sess__h">
+          <div>
+            <div class="sess__d">${Calc.dayLabel(sess.start)}${sess.end == null ? ' · en cours' : ''}</div>
+            <div class="sess__m">${Calc.clock(sess.start)}${sess.end ? '–' + Calc.clock(sess.end) : ''} · ${Calc.hoursLabel(dur)} · ${t.n} course${t.n > 1 ? 's' : ''} · ${Calc.km(t.km)} km</div>
+          </div>
+          <div class="sess__v">${Calc.eur(t.net)} €</div>
+        </div>
+        <div class="sess__body">
+          ${rows}
+          <div class="row">
+            <div class="row__l"><div class="row__s">Brut ${Calc.eur(t.gross)} € · cotisations −${Calc.eur(t.social)} € · véhicule −${Calc.eur(t.vehicle)} €</div></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    box.querySelectorAll('.sess__h').forEach(h => {
+      h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+    });
+    box.querySelectorAll('[data-course]').forEach(r => {
+      r.addEventListener('click', () => App.editCourse(r.dataset.course));
+    });
+  }
+
+  /* ══ STATS ════════════════════════════ */
+  let range = 7;
+
+  function stats() {
+    const s = Store.settings();
+    const all = Store.courses();
+    const list = Calc.sinceDays(all, range);
+    const box = $('stats-body');
+
+    if (!all.length) {
+      box.innerHTML = empty('Pas encore de données',
+        'Enregistre quelques courses et cette page te dira où est l\'argent.');
+      return;
+    }
+
+    // Durée travaillée sur la période, pour un €/h honnête
+    const cut = range >= 9999 ? 0 : Date.now() - range * 86400000;
+    const sess = Store.sessions().filter(x => x.start >= cut);
+    const worked = Calc.workedMs(sess);
+    const t = Calc.summarize(list, s, worked);
+
+    const hours = Calc.byHour(list, s);
+    const maxHour = Math.max(...hours.map(h => h.net), 1);
+    const bestHour = hours.indexOf(hours.reduce((a, b) => b.net > a.net ? b : a, hours[0]));
+
+    const days = Calc.byWeekday(list, s);
+    const maxDay = Math.max(...days.map(d => d.net), 1);
+
+    // On n'affiche que les heures où il s'est passé quelque chose
+    const active = hours.map((h, i) => ({ ...h, i })).filter(h => h.n > 0);
+    const from = active.length ? Math.max(0, active[0].i - 1) : 8;
+    const to = active.length ? Math.min(23, active[active.length - 1].i + 1) : 23;
+    const slice = hours.slice(from, to + 1);
+
+    box.innerHTML = goalCard() + `
+      <div class="kpis">
+        <div class="kpi"><div class="kpi__k">Net encaissé</div><div class="kpi__v pos">${Calc.eur(t.net)} €</div><div class="kpi__s">sur ${Calc.eur(t.gross)} € bruts</div></div>
+        <div class="kpi"><div class="kpi__k">Net par heure</div><div class="kpi__v ${t.netPerHour != null && t.netPerHour >= s.hourlyGoal ? 'pos' : 'acc'}">${t.netPerHour != null ? Calc.eur(t.netPerHour) + ' €' : '—'}</div><div class="kpi__s">objectif ${Calc.eur(s.hourlyGoal, 0)} €</div></div>
+        <div class="kpi"><div class="kpi__k">Courses</div><div class="kpi__v">${t.n}</div><div class="kpi__s">${t.avg ? Calc.eur(t.avg) + ' € en moyenne' : '—'}</div></div>
+        <div class="kpi"><div class="kpi__k">Distance</div><div class="kpi__v">${Math.round(t.km)} km</div><div class="kpi__s">${t.perKm ? Calc.eur(t.perKm) + ' €/km' : '—'}</div></div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Ce que rapporte chaque heure</p>
+        <div class="bars">
+          ${slice.map(h => {
+            const idx = hours.indexOf(h);
+            const pct = Math.max(3, (h.net / maxHour) * 100);
+            return `<div class="bar ${idx === bestHour && h.net > 0 ? 'best' : ''}" style="height:${pct}%" title="${idx}h — ${Calc.eur(h.net)} €"></div>`;
+          }).join('')}
+        </div>
+        <div class="barlabels"><span>${from}h</span><span>${Math.round((from + to) / 2)}h</span><span>${to}h</span></div>
+        <p class="hint">${active.length ? `Ton meilleur créneau : <strong>${bestHour}h–${bestHour + 1}h</strong>, ${Calc.eur(hours[bestHour].net)} € net cumulés.` : 'Pas encore assez de courses pour dégager une tendance.'}</p>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Ce que rapporte chaque jour</p>
+        ${days.map(d => `<div class="row">
+          <div class="row__l"><div class="row__t">${d.name}</div><div class="row__s">${d.n} course${d.n > 1 ? 's' : ''}</div></div>
+          <div class="row__r">${d.n ? Calc.eur(d.net) + ' €' : '—'}</div>
+        </div>`).join('')}
+      </div>
+
+      <div class="card">
+        <p class="card__h">Où part le brut</p>
+        <div class="row"><div class="row__l"><div class="row__t">Brut encaissé</div></div><div class="row__r">${Calc.eur(t.gross)} €</div></div>
+        <div class="row"><div class="row__l"><div class="row__t">Cotisations sociales</div><div class="row__s">${Calc.eur(s.cotisationRate, 1)} % du CA</div></div><div class="row__r">−${Calc.eur(t.social)} €</div></div>
+        <div class="row"><div class="row__l"><div class="row__t">Coût véhicule</div><div class="row__s">${Calc.eur(s.costPerKm, 2)} € le km</div></div><div class="row__r">−${Calc.eur(t.vehicle)} €</div></div>
+        <div class="row"><div class="row__l"><div class="row__t">Net réel</div></div><div class="row__r" style="color:var(--mint)">${Calc.eur(t.net)} €</div></div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">À mettre de côté</p>
+        <div class="row">
+          <div class="row__l"><div class="row__t">Provision recommandée</div><div class="row__s">${Calc.eur(s.provisionRate, 0)} % du brut de la période</div></div>
+          <div class="row__r" style="color:var(--sodium)">${Calc.eur(t.provision)} €</div>
+        </div>
+        <p class="hint">Cette provision couvre tes cotisations sociales et laisse une marge pour l'impôt sur le revenu. En micro-entreprise, tes frais ne se déduisent pas : l'administration applique un abattement forfaitaire, ici <strong>50 %</strong> pour les prestations de services BIC. Suivre tes frais sert à ta rentabilité, pas à ta déclaration.</p>
+      </div>`;
+  }
+
+  /* Le bloc d'objectif : où j'en suis, et combien aujourd'hui. */
+  function goalCard() {
+    const s = Store.settings();
+    const g = Calc.goalStatus(Store.courses(), s);
+    if (!g) return '';
+
+    const unite = g.basis === 'net' ? 'net' : 'brut';
+    const nb = n => Math.round(n).toLocaleString('fr-FR');
+
+    if (g.reached) {
+      return `<div class="card goal">
+        <p class="card__h">Objectif atteint</p>
+        <div class="goal__big" style="color:var(--mint)">${nb(g.done)} €</div>
+        <div class="goal__sub">Tu visais ${nb(g.amount)} € ${unite}. C'est fait.</div>
+        <div class="gauge" style="margin-top:10px"><div class="gauge__fill ok" style="width:100%"></div></div>
+      </div>`;
+    }
+
+    if (g.finished) {
+      return `<div class="card goal">
+        <p class="card__h">Période terminée</p>
+        <div class="goal__big">${nb(g.done)} €</div>
+        <div class="goal__sub">sur ${nb(g.amount)} € visés — il manquait ${nb(g.remain)} €</div>
+        <div class="gauge" style="margin-top:10px"><div class="gauge__fill warn" style="width:${g.pct.toFixed(1)}%"></div></div>
+        <p class="hint">Fixe une nouvelle période dans les réglages pour repartir.</p>
+      </div>`;
+    }
+
+    const avance = g.ahead >= 0;
+    const ecart = nb(Math.abs(g.ahead));
+
+    return `<div class="card goal">
+      <p class="card__h">Objectif — ${nb(g.amount)} € ${unite}</p>
+
+      <div class="goal__row">
+        <div>
+          <div class="goal__big">${nb(g.done)} €</div>
+          <div class="goal__sub">${g.pct.toFixed(1)} % · reste ${nb(g.remain)} €</div>
+        </div>
+        <span class="pill ${avance ? 'pill--ok' : 'pill--warn'}">${avance ? '+' : '−'}${ecart} €</span>
+      </div>
+
+      <div class="gauge"><div class="gauge__fill ${avance ? 'ok' : 'warn'}" style="width:${g.pct.toFixed(1)}%"></div></div>
+      <div class="goal__scale"><span>${g.start.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span><span>${g.end.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' })}</span></div>
+
+      <div class="goal__target">
+        <div class="goal__tk">À faire par jour travaillé</div>
+        <div class="goal__tv">${g.perDay != null ? Calc.eur(g.perDay) + ' €' : '—'}</div>
+        <div class="goal__ts">${g.daysLeft} jour${g.daysLeft > 1 ? 's' : ''} travaillable${g.daysLeft > 1 ? 's' : ''} d'ici l'échéance</div>
+      </div>
+
+      ${g.isWorkDay ? `<div class="goal__today">
+        <div class="goal__trow"><span>Aujourd'hui</span><b>${Calc.eur(g.todayDone)} / ${Calc.eur(g.todayTarget)} €</b></div>
+        <div class="gauge"><div class="gauge__fill ${g.todayLeft === 0 ? 'ok' : 'warn'}" style="width:${g.todayPct.toFixed(1)}%"></div></div>
+        <div class="goal__ts">${g.todayLeft === 0 ? 'Objectif du jour atteint.' : 'Encore ' + Calc.eur(g.todayLeft) + ' € pour tenir le rythme.'}</div>
+      </div>` : `<p class="hint">Aujourd'hui n'est pas un jour travaillé dans tes réglages. Rien n'est attendu, et les autres jours en tiennent déjà compte.</p>`}
+
+      ${g.nbWorked ? `<div class="row" style="margin-top:6px"><div class="row__l">
+        <div class="row__t">Au rythme actuel</div>
+        <div class="row__s">${Calc.eur(g.avgPerWorkedDay)} € par jour travaillé, sur ${g.nbWorked} jour${g.nbWorked > 1 ? 's' : ''}${g.etaDate ? ' · objectif atteint le ' + g.etaDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div></div>
+        <div class="row__r" style="color:${g.atteignable === false ? 'var(--rose)' : 'var(--mint)'}">${nb(g.projection)} €</div></div>` : ''}
+
+      ${g.atteignable === false ? `<p class="hint" style="color:#F0D9A8">À ce rythme tu finirais à ${nb(g.projection)} €, soit ${nb(g.amount - g.projection)} € de moins. Trois leviers : monter à ${Calc.eur(g.perDay)} € par jour, ajouter des jours travaillables, ou revoir le montant.</p>` : ''}
+    </div>`;
+  }
+
+  function bindStatsRange() {
+    $('stats-range').addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      range = Number(b.dataset.range);
+      $('stats-range').querySelectorAll('button').forEach(x => x.classList.toggle('is-on', x === b));
+      stats();
+    });
+  }
+
+  /* ══ RÉGLAGES ═════════════════════════ */
+  function settings() {
+    const s = Store.settings();
+    const rm = Rules.meta();
+    const box = $('settings-body');
+
+    const vehicleOpts = Object.entries(Store.VEHICLES)
+      .map(([k, v]) => `<option value="${k}"${s.vehicle === k ? ' selected' : ''}>${v.label}</option>`).join('');
+
+    box.innerHTML = `
+      <div class="card">
+        <p class="card__h">Véhicule</p>
+        <label class="field"><span>Type</span><select id="set-vehicle">${vehicleOpts}</select></label>
+        <div class="fieldrow">
+          <label class="field"><span>Coût au kilomètre</span>
+            <div class="inputwrap"><input type="number" step="0.01" inputmode="decimal" id="set-cost" value="${s.costPerKm}"><i>€</i></div></label>
+          <label class="field"><span>Vitesse moyenne</span>
+            <div class="inputwrap"><input type="number" step="1" inputmode="decimal" id="set-speed" value="${s.avgSpeed}"><i>km/h</i></div></label>
+        </div>
+        <p class="hint">Le coût au km couvre l'usure réelle : pneus, plaquettes, chaîne, batteries, entretien, assurance. Changer de véhicule remet les valeurs conseillées, que tu peux ensuite ajuster.</p>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Seuils d'acceptation</p>
+        <div class="fieldrow">
+          <label class="field"><span>Minimum par km</span>
+            <div class="inputwrap"><input type="number" step="0.05" inputmode="decimal" id="set-threshold" value="${s.thresholdPerKm}"><i>€</i></div></label>
+          <label class="field"><span>Course minimum</span>
+            <div class="inputwrap"><input type="number" step="0.5" inputmode="decimal" id="set-minfare" value="${s.minFare}"><i>€</i></div></label>
+        </div>
+        <div class="switchrow">
+          <div><div class="switchrow__t">Compter le retour à vide</div>
+          <div class="switchrow__s">Majore la distance de 50 % dans l'évaluation d'une offre, pour tenir compte du trajet de retour.</div></div>
+          <button class="switch${s.countReturn ? ' on' : ''}" id="set-return" aria-label="Compter le retour à vide"></button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Objectifs courants</p>
+        <div class="fieldrow">
+          <label class="field"><span>Net par heure</span>
+            <div class="inputwrap"><input type="number" step="0.5" inputmode="decimal" id="set-hgoal" value="${s.hourlyGoal}"><i>€</i></div></label>
+          <label class="field"><span>Net par jour</span>
+            <div class="inputwrap"><input type="number" step="5" inputmode="decimal" id="set-dgoal" value="${s.dailyGoal}"><i>€</i></div></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Grand objectif</p>
+        <div class="switchrow">
+          <div><div class="switchrow__t">Suivre un objectif de chiffre</div>
+            <div class="switchrow__s">Le montant journalier se recalcule seul à chaque course et à chaque jour qui passe.</div></div>
+          <button class="switch${s.goalEnabled ? ' on' : ''}" id="set-goal-on" aria-label="Objectif"></button>
+        </div>
+        <div id="goal-fields"${s.goalEnabled ? '' : ' hidden'}>
+          <div class="fieldrow" style="margin-top:14px">
+            <label class="field"><span>Montant visé</span>
+              <div class="inputwrap"><input type="number" step="500" inputmode="decimal" id="set-goal-amount" value="${s.goalAmount}"><i>€</i></div></label>
+            <label class="field"><span>Compté en</span>
+              <select id="set-goal-basis">
+                <option value="brut"${s.goalBasis === 'brut' ? ' selected' : ''}>Brut encaissé</option>
+                <option value="net"${s.goalBasis === 'net' ? ' selected' : ''}>Net après charges</option>
+              </select></label>
+          </div>
+          <div class="fieldrow">
+            <label class="field"><span>Du</span><input type="date" id="set-goal-start" value="${esc(s.goalStart || '')}"></label>
+            <label class="field"><span>Au</span><input type="date" id="set-goal-end" value="${esc(s.goalEnd || '')}"></label>
+          </div>
+          <span class="daylbl">Jours où tu peux livrer</span>
+          <div class="daypick" id="goal-days">
+            ${[1, 2, 3, 4, 5, 6, 0].map(d => `<button data-day="${d}" class="${(s.goalDays || []).indexOf(d) !== -1 ? 'on' : ''}">${['D', 'L', 'M', 'M', 'J', 'V', 'S'][d]}</button>`).join('')}
+          </div>
+          <p class="hint" id="goal-preview"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Provisions</p>
+        <div class="fieldrow">
+          <label class="field"><span>Taux de cotisations</span>
+            <div class="inputwrap"><input type="number" step="0.1" inputmode="decimal" id="set-cotis" value="${s.cotisationRate}"><i>%</i></div></label>
+          <label class="field"><span>Provision totale</span>
+            <div class="inputwrap"><input type="number" step="1" inputmode="decimal" id="set-prov" value="${s.provisionRate}"><i>%</i></div></label>
+        </div>
+        <p class="hint">Le taux de cotisations se règle normalement depuis l'onglet <strong>Statut</strong>, où il découle de ton régime et de l'ACRE. Tu peux le forcer ici si besoin. La provision totale, plus large, absorbe aussi l'impôt.</p>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Réglementation</p>
+        <div class="row"><div class="row__l">
+          <div class="row__t">${esc(rm.label)}</div>
+          <div class="row__s">Version ${esc(rm.version)}${rm.verifiedOn ? ' · vérifié le ' + new Date(rm.verifiedOn).toLocaleDateString('fr-FR') : ''} · source : ${esc(rm.origin)}</div>
+        </div>${Rules.isStale() ? '<span class="pill pill--warn">à vérifier</span>' : '<span class="pill pill--ok">à jour</span>'}</div>
+        <p class="hint" style="margin:10px 0 12px">Taux, seuils, échéances et démarches vivent dans un fichier séparé. Quand la loi change, tu remplaces ce fichier — aucune ligne de code à toucher.</p>
+        <button class="btn btn--ghost" id="btn-rules-import">Importer un barème à jour</button>
+        <button class="btn btn--ghost" id="btn-rules-model">Télécharger le barème actuel</button>
+        <input type="file" id="file-rules" accept="application/json,.json" hidden>
+        ${rm.origin === 'import' ? '<button class="btn btn--ghost" id="btn-rules-reset" style="margin-top:9px">Revenir au barème du dépôt</button>' : ''}
+      </div>
+
+      <div class="card">
+        <p class="card__h">Plateformes</p>
+        <div class="chiplist" id="platform-list"></div>
+        <div class="fieldrow">
+          <label class="field" style="margin-bottom:0"><input type="text" id="new-platform" placeholder="Ajouter une plateforme"></label>
+        </div>
+        <button class="btn btn--ghost" id="btn-add-platform" style="margin-top:10px">Ajouter</button>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Pendant la course</p>
+        <div class="switchrow">
+          <div><div class="switchrow__t">Mesurer les kilomètres au GPS</div>
+          <div class="switchrow__s">Coupe cette option pour saisir les distances toi-même.</div></div>
+          <button class="switch${s.autoDistance ? ' on' : ''}" id="set-auto" aria-label="Mesure GPS"></button>
+        </div>
+        <div class="switchrow">
+          <div><div class="switchrow__t">Garder l'écran allumé</div>
+          <div class="switchrow__s">Empêche la mise en veille tant qu'une course tourne.</div></div>
+          <button class="switch${s.keepAwake ? ' on' : ''}" id="set-awake" aria-label="Écran allumé"></button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Tes données</p>
+        <p class="hint" style="margin:0 0 12px">Tout est stocké sur cet appareil, rien ne part ailleurs. Exporte de temps en temps : vider les données du navigateur effacerait tout.</p>
+        <button class="btn btn--ghost" id="btn-export">Exporter une sauvegarde</button>
+        <button class="btn btn--ghost" id="btn-import">Restaurer une sauvegarde</button>
+        <input type="file" id="file-import" accept="application/json,.json" hidden>
+        <button class="btn btn--danger" id="btn-wipe" style="margin-top:18px">Tout effacer</button>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Diagnostic</p>
+        <div class="diag" id="diag-box">Lecture…</div>
+        <button class="btn btn--ghost" id="btn-diag-refresh">Rafraîchir</button>
+        <button class="btn btn--ghost" id="btn-diag-copy">Copier le diagnostic</button>
+        <p class="hint">À copier-coller si quelque chose ne fonctionne pas : ça dit précisément ce qui bloque.</p>
+      </div>
+
+      <div class="card">
+        <p class="card__h">Version</p>
+        <div class="row"><div class="row__l">
+          <div class="row__t">Tournée version ${App.VERSION}</div>
+          <div class="row__s">${App.VERSION_DATE}</div>
+        </div><span class="pill">v${App.VERSION}</span></div>
+        <p class="hint" style="margin:10px 0 12px">Si ce numéro ne correspond pas au fichier que tu viens de mettre en ligne, c'est que l'ancienne version est encore en mémoire. Le bouton ci-dessous efface tout et recharge.</p>
+        <button class="btn btn--ghost" id="btn-update">Forcer la mise à jour</button>
+      </div>
+
+      <p class="hint" style="text-align:center;padding:8px 0 20px">Tournée — carnet de bord hors ligne.<br>Aucun compte, aucun serveur, aucune donnée envoyée.</p>`;
+
+    renderPlatforms();
+    bindSettings();
+    renderDiag();
+  }
+
+  function diagText() {
+    const t = Tracker.diagnostic();
+    const rm = Rules.meta();
+    const s = Store.settings();
+    let stockage = 'indisponible';
+    try { localStorage.setItem('_t', '1'); localStorage.removeItem('_t'); stockage = 'ok'; } catch (e) {}
+    return [
+      'Version de l\'application : ' + App.VERSION + ' (' + App.VERSION_DATE + ')',
+      '',
+      'Carte',
+      '  bibliothèque Leaflet : ' + (t.leaflet ? 'chargée' : 'ABSENTE'),
+      '  état                 : ' + t.carte,
+      '  source               : ' + t.source,
+      '  tuiles reçues        : ' + t.tuilesChargees + '  (échecs : ' + t.tuilesEnEchec + ')',
+      '',
+      'GPS',
+      '  suivi actif          : ' + (t.gpsSuivi ? 'oui' : 'non'),
+      '  dernier point        : ' + (t.dernierPoint ? t.dernierPoint.a + ', précision ' + t.dernierPoint.precision : 'aucun'),
+      '  course enregistrée   : ' + (t.enregistrement ? 'oui, ' + t.distanceCourante : 'non'),
+      '  API disponible       : ' + ('geolocation' in navigator ? 'oui' : 'non'),
+      '  contexte sécurisé    : ' + (window.isSecureContext ? 'oui (https)' : 'NON — le GPS ne marchera pas'),
+      '',
+      'Application',
+      '  barème               : ' + rm.version + ' (' + rm.origin + ')',
+      '  service worker       : ' + ('serviceWorker' in navigator
+          ? (navigator.serviceWorker.controller ? 'actif' : 'enregistré, pas encore actif') : 'non supporté'),
+      '  stockage local       : ' + stockage,
+      '  courses / shifts     : ' + Store.courses().length + ' / ' + Store.sessions().length,
+      '  taux appliqué        : ' + s.cotisationRate + ' %',
+      '  écran                : ' + innerWidth + '×' + innerHeight,
+      '  en ligne             : ' + (navigator.onLine ? 'oui' : 'non')
+    ].join('\n');
+  }
+
+  /* Aperçu immédiat sous les réglages : on voit tout de suite
+     l'effet d'un changement de dates ou de jours travaillables. */
+  function goalPreview() {
+    const el = $('goal-preview');
+    if (!el) return;
+    const g = Calc.goalStatus(Store.courses(), Store.settings());
+    if (!g) { el.textContent = 'Renseigne un montant pour activer le suivi.'; return; }
+    if (g.reached) { el.textContent = 'Objectif déjà atteint.'; return; }
+    if (!g.daysLeft) { el.textContent = 'Aucun jour travaillable restant sur cette période.'; return; }
+    el.innerHTML = 'Soit <strong>' + Calc.eur(g.perDay) + ' €</strong> par jour travaillé, sur <strong>'
+                 + g.daysLeft + '</strong> jours restants.';
+  }
+
+  function renderDiag() {
+    const el = $('diag-box');
+    if (el) el.textContent = diagText();
+  }
+
+  function renderPlatforms() {
+    const s = Store.settings();
+    const box = $('platform-list');
+    box.innerHTML = s.platforms.map((p, i) =>
+      `<span class="chip">${esc(p)}<button data-rm="${i}" aria-label="Retirer ${esc(p)}">×</button></span>`).join('')
+      || '<span class="hint">Aucune plateforme. Ajoute-en une ci-dessous.</span>';
+
+    box.querySelectorAll('[data-rm]').forEach(b => {
+      b.addEventListener('click', () => {
+        const arr = Store.settings().platforms.slice();
+        arr.splice(Number(b.dataset.rm), 1);
+        Store.setSetting('platforms', arr);
+        renderPlatforms();
+        App.refreshPlatformSelect();
+      });
+    });
+  }
+
+  function bindSettings() {
+    const num = (id, key) => {
+      const el = $(id);
+      if (el) el.addEventListener('change', () => {
+        const v = parseFloat(el.value.replace(',', '.'));
+        if (!isNaN(v) && v >= 0) { Store.setSetting(key, v); App.toast('Enregistré'); }
+        else el.value = Store.settings()[key];
+      });
+    };
+
+    num('set-cost', 'costPerKm');
+    num('set-speed', 'avgSpeed');
+    num('set-threshold', 'thresholdPerKm');
+    num('set-minfare', 'minFare');
+    num('set-hgoal', 'hourlyGoal');
+    num('set-goal-amount', 'goalAmount');
+    num('set-dgoal', 'dailyGoal');
+    num('set-cotis', 'cotisationRate');
+    num('set-prov', 'provisionRate');
+
+    $('set-vehicle').addEventListener('change', e => {
+      const v = Store.VEHICLES[e.target.value];
+      Store.setSetting('vehicle', e.target.value);
+      Store.setSetting('costPerKm', v.cost);
+      Store.setSetting('avgSpeed', v.speed);
+      settings();
+      App.toast('Valeurs du véhicule appliquées');
+    });
+
+    const toggle = (id, key) => {
+      const el = $(id);
+      if (el) el.addEventListener('click', () => {
+        const v = !Store.settings()[key];
+        Store.setSetting(key, v);
+        el.classList.toggle('on', v);
+      });
+    };
+    toggle('set-return', 'countReturn');
+    toggle('set-auto', 'autoDistance');
+    toggle('set-awake', 'keepAwake');
+
+    // — Grand objectif —
+    const gOn = $('set-goal-on');
+    if (gOn) gOn.addEventListener('click', () => {
+      const v = !Store.settings().goalEnabled;
+      Store.setSetting('goalEnabled', v);
+      gOn.classList.toggle('on', v);
+      $('goal-fields').hidden = !v;
+    });
+
+    const gKeys = { 'set-goal-basis': 'goalBasis', 'set-goal-start': 'goalStart', 'set-goal-end': 'goalEnd' };
+    Object.keys(gKeys).forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        Store.setSetting(gKeys[id], el.value);
+        goalPreview();
+        App.toast('Enregistré');
+      });
+    });
+
+    const dp = $('goal-days');
+    if (dp) dp.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const d = Number(b.dataset.day);
+      const arr = (Store.settings().goalDays || []).slice();
+      const i = arr.indexOf(d);
+      if (i === -1) arr.push(d); else arr.splice(i, 1);
+      Store.setSetting('goalDays', arr);
+      b.classList.toggle('on', i === -1);
+      goalPreview();
+    });
+    goalPreview();
+
+    $('btn-add-platform').addEventListener('click', () => {
+      const el = $('new-platform');
+      const v = el.value.trim();
+      if (!v) return;
+      const arr = Store.settings().platforms.slice();
+      if (!arr.includes(v)) arr.push(v);
+      Store.setSetting('platforms', arr);
+      el.value = '';
+      renderPlatforms();
+      App.refreshPlatformSelect();
+    });
+
+    /* Purge le cache hors ligne puis recharge : le seul moyen sûr
+       de sortir d'une version restée coincée en mémoire. Les
+       courses et réglages, eux, ne sont pas touchés. */
+    $('btn-update').addEventListener('click', async () => {
+      App.toast('Nettoyage…');
+      try {
+        if ('serviceWorker' in navigator) {
+          const rs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(rs.map(r => r.unregister()));
+        }
+        if (window.caches) {
+          const ks = await caches.keys();
+          await Promise.all(ks.map(k => caches.delete(k)));
+        }
+      } catch (e) { /* sans conséquence : on recharge quand même */ }
+      location.href = location.pathname + '?maj=' + Date.now();
+    });
+
+    $('btn-diag-refresh').addEventListener('click', () => { renderDiag(); App.toast('Diagnostic rafraîchi'); });
+
+    $('btn-diag-copy').addEventListener('click', () => {
+      const t = diagText();
+      navigator.clipboard?.writeText(t)
+        .then(() => App.toast('Diagnostic copié'))
+        .catch(() => App.toast('Copie impossible — sélectionne le texte à la main'));
+    });
+
+    $('btn-rules-import').addEventListener('click', () => $('file-rules').click());
+
+    $('file-rules').addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          Rules.apply(r.result);
+          Admin.syncRate();
+          App.toast('Barème mis à jour');
+          settings();
+        } catch (err) {
+          alert('Barème refusé.\n\n' + err.message);
+        }
+      };
+      r.readAsText(f);
+      e.target.value = '';
+    });
+
+    $('btn-rules-model').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(Rules.all(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'reglementation.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      App.toast('Barème téléchargé — modifie-le puis réimporte-le');
+    });
+
+    const rr = $('btn-rules-reset');
+    if (rr) rr.addEventListener('click', () => {
+      Rules.reset();
+      App.toast('Barème du dépôt restauré');
+      setTimeout(() => location.reload(), 700);
+    });
+
+    $('btn-export').addEventListener('click', () => {
+      const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `tournee-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      App.toast('Sauvegarde téléchargée');
+    });
+
+    $('btn-import').addEventListener('click', () => $('file-import').click());
+    $('file-import').addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          Store.importJSON(r.result);
+          App.toast('Sauvegarde restaurée');
+          setTimeout(() => location.reload(), 700);
+        } catch (err) {
+          App.toast('Fichier illisible');
+        }
+      };
+      r.readAsText(f);
+    });
+
+    $('btn-wipe').addEventListener('click', () => {
+      if (!confirm('Effacer toutes tes courses, shifts et réglages ? Cette action est définitive.')) return;
+      Store.wipe();
+      location.reload();
+    });
+  }
+
+  return { history, stats, settings, bindStatsRange, renderDiag };
+
+})();
+
+
+/* ═══════════════════════════════════════════
+   app.js — contrôleur principal
+   ═══════════════════════════════════════════ */
+
+const App = (() => {
+
+  /* Numéro de version, affiché dans les réglages et dans le
+     diagnostic. Il permet de savoir en un coup d'oeil quelle
+     version tourne réellement, sans avoir à comparer des fichiers. */
+  const VERSION = '7';
+  const VERSION_DATE = '1er septembre 2026';
+
+  const $ = id => document.getElementById(id);
+  let tab = 'course';
+  let editingId = null;
+  let ticker = null;
+
+  /* ── Petits utilitaires d'interface ───── */
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  }
+
+  function openModal(id) { $(id).hidden = false; }
+  function closeModal(id) { $(id).hidden = true; }
+
+  function numVal(id) {
+    const v = parseFloat(String($(id).value).replace(',', '.'));
+    return isNaN(v) ? null : v;
+  }
+
+  /* ── Navigation ───────────────────────── */
+  function go(name) {
+    tab = name;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('is-active'));
+    $('screen-' + name).classList.add('is-active');
+    document.querySelectorAll('#tabbar button').forEach(b =>
+      b.classList.toggle('is-on', b.dataset.tab === name));
+
+    if (name === 'course')   Tracker.invalidate();
+    if (name === 'admin')    Admin.render();
+    if (name === 'history')  Screens.history();
+    if (name === 'stats')    Screens.stats();
+    if (name === 'settings') Screens.settings();
+  }
+
+  /* ── État de l'écran Course ───────────── */
+  function state() {
+    const a = Store.active();
+    if (!a) return 'idle';
+    return a.courseId ? 'running' : 'ready';
+  }
+
+  function showPane(name) {
+    ['idle', 'ready', 'running'].forEach(p =>
+      $('pane-' + p).classList.toggle('is-active', p === name));
+  }
+
+  function renderCourseScreen() {
+    const s = Store.settings();
+    const st = state();
+    const a = Store.active();
+
+    showPane(st);
+
+    // Pastille d'état
+    const dot = $('status-dot'), lab = $('status-label');
+    dot.className = 'dot' + (st === 'running' ? ' run' : st === 'ready' ? ' on' : '');
+    lab.textContent = st === 'running' ? 'Course en cours' : st === 'ready' ? 'En service' : 'Hors service';
+
+    // Chiffres du jour
+    const today = Calc.todayCourses(Store.courses());
+    const todaySess = Calc.todaySessions(Store.sessions());
+    const worked = Calc.workedMs(todaySess);
+    const t = Calc.summarize(today, s, worked);
+
+    const figs = [
+      { k: 'Net du jour', v: Calc.eur(t.net) + ' €', c: t.net >= s.dailyGoal ? 'pos' : '' },
+      { k: 'Net / heure', v: t.netPerHour != null ? Calc.eur(t.netPerHour) + ' €' : '—',
+        c: t.netPerHour != null ? (t.netPerHour >= s.hourlyGoal ? 'pos' : 'neg') : '' },
+      { k: 'Courses', v: String(t.n), c: '' },
+      { k: 'Km', v: Math.round(t.km) + '', c: '' }
+    ];
+    const html = figs.map(f =>
+      `<div class="fig"><div class="fig__k">${f.k}</div><div class="fig__v ${f.c}">${f.v}</div></div>`).join('');
+
+    $('figures-foot').innerHTML = html;
+    $('figures-foot').style.display = st === 'idle' ? 'none' : 'flex';
+
+    renderGoalBar(st);
+
+    // Récapitulatif quand on est hors service
+    if (st === 'idle') {
+      $('recap-idle').innerHTML = t.n
+        ? `<div class="figures figures--foot">${html}</div>`
+        : '';
+    }
+
+    // Course en cours
+    if (st === 'running') {
+      const offered = a.offerAmount;
+      $('run-amount').textContent = offered != null ? Calc.eur(offered) : '—';
+      const chip = $('run-chip');
+      if (offered != null && a.offerKm) {
+        const j = Calc.judge(offered, a.offerKm, s);
+        chip.className = 'verdict-chip ' + (j ? j.level : '');
+        chip.textContent = j ? j.word : '';
+      } else {
+        chip.className = 'verdict-chip';
+        chip.textContent = '';
+      }
+    }
+
+    updateChrono();
+  }
+
+  /* Rappel discret de l'objectif du jour, visible pendant le
+     travail sans avoir à quitter l'écran de course. */
+  function renderGoalBar(st) {
+    const bar = $('goalbar');
+    const g = Calc.goalStatus(Store.courses(), Store.settings());
+
+    if (!g || g.finished || st === 'idle') { bar.hidden = true; return; }
+
+    if (g.reached) {
+      bar.hidden = false;
+      bar.innerHTML = '<div class="goalbar__row"><span>Objectif atteint</span>'
+        + '<b style="color:var(--mint)">' + Math.round(g.done).toLocaleString('fr-FR') + ' €</b></div>'
+        + '<div class="gauge"><div class="gauge__fill ok" style="width:100%"></div></div>';
+      return;
+    }
+
+    if (!g.isWorkDay) {
+      bar.hidden = false;
+      bar.innerHTML = '<div class="goalbar__row"><span>Jour de repos prévu</span>'
+        + '<b>' + Calc.eur(g.todayDone) + ' €</b></div>';
+      return;
+    }
+
+    bar.hidden = false;
+    bar.innerHTML = '<div class="goalbar__row"><span>Objectif du jour</span><b>'
+      + Calc.eur(g.todayDone) + ' / ' + Calc.eur(g.todayTarget) + ' €</b></div>'
+      + '<div class="gauge"><div class="gauge__fill ' + (g.todayLeft === 0 ? 'ok' : 'warn')
+      + '" style="width:' + g.todayPct.toFixed(1) + '%"></div></div>';
+  }
+
+  /* Le chrono affiche la course quand il y en a une,
+     sinon la durée du shift. */
+  function updateChrono() {
+    const a = Store.active();
+    const sess = Store.activeSession();
+    let ms = 0;
+    if (a && a.courseStart) ms = Date.now() - a.courseStart;
+    else if (sess) ms = Date.now() - sess.start;
+    $('chrono').textContent = Calc.hms(ms);
+
+    if (a && a.courseId) {
+      const km = Store.settings().autoDistance ? Tracker.currentKm() : 0;
+      const sub = $('run-sub');
+      if (Store.settings().autoDistance) {
+        sub.textContent = Calc.km(km) + ' km parcourus'
+          + (a.offerKm ? ` · ${Calc.km(a.offerKm)} km annoncés` : '');
+      } else {
+        sub.textContent = a.offerKm ? `${Calc.km(a.offerKm)} km annoncés` : 'Distance saisie à la fin';
+      }
+    }
+  }
+
+  /* Le chrono bat à la seconde ; les chiffres du jour ne bougent
+     qu'au quart de minute, pour ne pas réécrire le DOM sans cesse. */
+  function startTicker() {
+    stopTicker();
+    let n = 0;
+    ticker = setInterval(() => {
+      updateChrono();
+      n++;
+      if (n % 15 === 0 && tab === 'course' && Store.activeSession()) renderCourseScreen();
+    }, 1000);
+  }
+  function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
+
+  /* ── Évaluation d'une offre ───────────── */
+  function refreshPlatformSelect() {
+    const s = Store.settings();
+    const sel = $('offer-platform');
+    sel.innerHTML = s.platforms.map(p =>
+      `<option value="${p}"${p === s.lastPlatform ? ' selected' : ''}>${p}</option>`).join('')
+      || '<option value="">—</option>';
+  }
+
+  function renderVerdict() {
+    const s = Store.settings();
+    const amount = numVal('offer-amount');
+    const kmDist = numVal('offer-km');
+    const box = $('offer-verdict');
+    const word = $('verdict-word');
+    const rate = $('verdict-rate');
+    const lines = $('verdict-lines');
+
+    const j = Calc.judge(amount, kmDist, s);
+    if (!j) {
+      box.className = 'verdict';
+      word.textContent = '—';
+      rate.textContent = '';
+      lines.innerHTML = '<div class="vline"><span>Saisis le montant et la distance pour obtenir un verdict.</span></div>';
+      return;
+    }
+
+    box.className = 'verdict ' + j.level;
+    word.textContent = j.word;
+    rate.textContent = Calc.eur(j.perKm) + ' €/km';
+    lines.innerHTML = `
+      <div class="vline"><span>Net estimé</span><b>${Calc.eur(j.net)} €</b></div>
+      <div class="vline"><span>Ramené à l'heure</span><b>${Calc.eur(j.perHour)} €/h</b></div>
+      <div class="vline"><span>Durée estimée</span><b>${Math.round(j.minutes)} min</b></div>
+      <div class="vline"><span>Cotisations et véhicule</span><b>−${Calc.eur(j.social + j.vehicle)} €</b></div>`;
+  }
+
+  function beginCourse(offer) {
+    Store.startCourse(offer);
+    if (Store.settings().autoDistance) Tracker.beginCourse();
+    closeModal('modal-offer');
+    renderCourseScreen();
+  }
+
+  /* ── Clôture d'une course ─────────────── */
+  function openCloseModal() {
+    const s = Store.settings();
+    const a = Store.active();
+    const tracked = s.autoDistance ? Tracker.currentKm() : (a.offerKm || 0);
+
+    $('close-amount').value = a.offerAmount != null ? a.offerAmount : '';
+    $('close-tip').value = '';
+    $('close-km').value = tracked ? tracked.toFixed(2) : (a.offerKm || '');
+    $('close-tracked').textContent = s.autoDistance
+      ? `${Calc.km(tracked)} km mesurés au GPS${a.offerKm ? `, ${Calc.km(a.offerKm)} km annoncés` : ''}.`
+      : 'Saisis la distance parcourue.';
+
+    openModal('modal-close');
+    setTimeout(() => $('close-amount').focus(), 220);
+  }
+
+  function saveCourse() {
+    const amount = numVal('close-amount');
+    if (amount == null) { toast('Indique le montant encaissé'); return; }
+
+    const kmVal = numVal('close-km') || 0;
+    Store.saveCourse({
+      amount,
+      tip: numVal('close-tip') || 0,
+      km: kmVal,
+      platform: Store.active().platform
+    });
+
+    Tracker.endCourse();
+    closeModal('modal-close');
+    renderCourseScreen();
+    toast('Course enregistrée');
+  }
+
+  /* ── Retouche d'une course ────────────── */
+  function editCourse(id) {
+    const c = Store.courses().find(x => x.id === id);
+    if (!c) return;
+    editingId = id;
+    $('edit-amount').value = c.amount;
+    $('edit-tip').value = c.tip || 0;
+    $('edit-km').value = c.km;
+    openModal('modal-edit');
+  }
+
+  /* ── Démarrage ────────────────────────── */
+  function bind() {
+
+    // Onglets
+    $('tabbar').addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (b) go(b.dataset.tab);
+    });
+
+    // Shift
+    $('btn-start-shift').addEventListener('click', () => {
+      Store.openSession();
+      Tracker.startWatch();
+      renderCourseScreen();
+      toast('Shift démarré');
+    });
+
+    $('btn-end-shift').addEventListener('click', () => {
+      const s = Store.settings();
+      const sess = Store.activeSession();
+      const list = Store.coursesOf(sess.id);
+      const t = Calc.summarize(list, s, Date.now() - sess.start);
+      Store.closeSession();
+      Tracker.stopWatch();
+      renderCourseScreen();
+      toast(t.n ? `Shift terminé — ${Calc.eur(t.net)} € net` : 'Shift terminé');
+    });
+
+    // Offre
+    $('btn-open-offer').addEventListener('click', () => {
+      refreshPlatformSelect();
+      $('offer-amount').value = '';
+      $('offer-km').value = '';
+      renderVerdict();
+      openModal('modal-offer');
+      setTimeout(() => $('offer-amount').focus(), 220);
+    });
+
+    ['offer-amount', 'offer-km'].forEach(id =>
+      $(id).addEventListener('input', renderVerdict));
+
+    $('btn-accept-offer').addEventListener('click', () => {
+      beginCourse({
+        amount: numVal('offer-amount'),
+        km: numVal('offer-km'),
+        platform: $('offer-platform').value
+      });
+    });
+
+    $('btn-skip-offer').addEventListener('click', () => {
+      beginCourse({ amount: null, km: null, platform: $('offer-platform').value });
+    });
+
+    // Course
+    $('btn-deliver').addEventListener('click', openCloseModal);
+    $('btn-save-course').addEventListener('click', saveCourse);
+
+    $('btn-cancel-course').addEventListener('click', () => {
+      if (!confirm('Annuler cette course ? Elle ne sera pas enregistrée.')) return;
+      Store.abortCourse();
+      Tracker.endCourse();
+      renderCourseScreen();
+    });
+
+    // Retouche
+    $('btn-update-course').addEventListener('click', () => {
+      Store.updateCourse(editingId, {
+        amount: numVal('edit-amount') || 0,
+        tip: numVal('edit-tip') || 0,
+        km: numVal('edit-km') || 0
+      });
+      closeModal('modal-edit');
+      Screens.history();
+      toast('Course modifiée');
+    });
+
+    $('btn-delete-course').addEventListener('click', () => {
+      if (!confirm('Supprimer cette course ?')) return;
+      Store.deleteCourse(editingId);
+      closeModal('modal-edit');
+      Screens.history();
+      toast('Course supprimée');
+    });
+
+    // Fermetures
+    document.querySelectorAll('[data-close]').forEach(b =>
+      b.addEventListener('click', () => closeModal(b.dataset.close)));
+
+    document.querySelectorAll('.modal').forEach(m =>
+      m.addEventListener('click', e => { if (e.target === m) m.hidden = true; }));
+
+    // Carte
+    $('btn-recenter').addEventListener('click', Tracker.recenter);
+
+    Screens.bindStatsRange();
+
+    // Mise à jour de la distance en direct
+    Tracker.on(() => { if (state() === 'running') updateChrono(); });
+  }
+
+  async function init() {
+    // Aucune modale ne doit survivre au démarrage.
+    document.querySelectorAll('.modal').forEach(m => { m.hidden = true; });
+    $('toast').hidden = true;
+
+    // La réglementation se charge avant tout affichage :
+    // sans elle, aucun taux ni aucune échéance n'est fiable.
+    await Rules.init();
+
+    // Le taux appliqué découle du régime et de l'ACRE.
+    Admin.syncRate();
+
+    bind();
+    Tracker.initMap();
+
+    // Si un shift était ouvert, on reprend le suivi là où il s'est arrêté.
+    if (Store.active()) {
+      Tracker.startWatch();
+      // Une course interrompue par une fermeture d'onglet perd sa
+      // distance GPS : on la reprend à zéro plutôt que d'inventer.
+      if (Store.active().courseId && Store.settings().autoDistance) Tracker.beginCourse();
+    }
+
+    renderCourseScreen();
+    startTicker();
+    go('course');
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  return { toast, editCourse, refreshPlatformSelect, go, VERSION, VERSION_DATE };
+
+})();
+
+</script>
+</body>
+</html>

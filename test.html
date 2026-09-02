@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Test — Tournée</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:18px 16px 40px;background:#0A0E15;color:#E9EDF2;
+  font-family:system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.6}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:#8A97A6;font-size:14px;margin:0 0 20px}
+.verdict{border-radius:14px;padding:18px;text-align:center;font-size:20px;font-weight:700;margin-bottom:18px}
+.verdict.ok{background:#0F3527;color:#3DD68C}
+.verdict.ko{background:#3B1A1C;color:#FF5D5D}
+.verdict.wait{background:#3A2C10;color:#FFB627}
+.line{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid #26303D}
+.line:last-child{border-bottom:none}
+.mark{flex:none;width:24px;font-size:17px;font-weight:700}
+.ok{color:#3DD68C}.ko{color:#FF5D5D}.wa{color:#FFB627}
+.lbl{flex:1;min-width:0}
+.nm{font-weight:600;font-size:15px}
+.dt{font-size:13px;color:#8A97A6;word-break:break-word}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#5E6B7A;
+  margin:24px 0 2px;font-weight:700}
+button{width:100%;padding:16px;margin-top:10px;border:none;border-radius:13px;
+  font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;background:#FFB627;color:#20160A}
+button.g{background:#1D2530;color:#E9EDF2;border:1px solid #26303D}
+#tap{background:#1D9E75;color:#04342C}
+#tapcount{font-size:15px;color:#8A97A6;text-align:center;margin-top:8px}
+pre{background:#141A24;border:1px solid #26303D;border-radius:11px;padding:12px;
+  font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:#8A97A6}
+</style>
+</head>
+<body>
+
+<h1>Test de Tournée</h1>
+<p class="sub">Cette page n'a besoin de rien d'extérieur. Elle dit ce qui marche et ce qui ne marche pas.</p>
+
+<div class="verdict wait" id="verdict">Analyse en cours…</div>
+
+<h2>Base</h2>
+<div id="base"></div>
+
+<h2>Le bouton répond-il ?</h2>
+<button id="tap">Appuie ici</button>
+<p id="tapcount">Aucun appui pour l'instant.</p>
+
+<h2>Réseau extérieur</h2>
+<div id="net"></div>
+
+<h2>Localisation</h2>
+<div id="geo"></div>
+<button class="g" id="askgeo">Tester le GPS</button>
+
+<h2>Cache et version</h2>
+<div id="cache"></div>
+<button class="g" id="clear">Vider le cache et recharger</button>
+
+<h2>À me transmettre</h2>
+<pre id="dump">…</pre>
+<button class="g" id="copy">Copier ce rapport</button>
+
+<script>
+var R = [];
+
+function row(box, ok, nom, detail) {
+  var m = ok === true ? '✓' : ok === false ? '✗' : '!';
+  var c = ok === true ? 'ok' : ok === false ? 'ko' : 'wa';
+  document.getElementById(box).insertAdjacentHTML('beforeend',
+    '<div class="line"><div class="mark ' + c + '">' + m + '</div>' +
+    '<div class="lbl"><div class="nm">' + nom + '</div>' +
+    '<div class="dt">' + detail + '</div></div></div>');
+  R.push((ok === true ? 'OK  ' : ok === false ? 'KO  ' : '??  ') + nom + ' : ' + detail);
+  refresh();
+}
+
+function refresh() {
+  document.getElementById('dump').textContent =
+    R.join('\n') + '\n\nnavigateur : ' + navigator.userAgent +
+    '\nécran : ' + innerWidth + 'x' + innerHeight +
+    ' (device ' + screen.width + 'x' + screen.height + ')' +
+    '\nadresse : ' + location.href +
+    '\naffichage : ' + (matchMedia('(display-mode: standalone)').matches ? 'app installée' : 'navigateur');
+}
+
+/* ── Base ── */
+row('base', true, 'JavaScript', 'fonctionne, sinon cette page serait vide');
+row('base', window.isSecureContext, 'Connexion sécurisée',
+    window.isSecureContext ? 'https, le GPS est autorisé' : 'PAS en https — le GPS sera refusé');
+
+try {
+  localStorage.setItem('_t', '1');
+  var v = localStorage.getItem('_t');
+  localStorage.removeItem('_t');
+  row('base', v === '1', 'Stockage local', v === '1' ? 'lecture et écriture ok' : 'écriture refusée');
+} catch (e) {
+  row('base', false, 'Stockage local', 'bloqué : ' + e.message + ' — navigation privée ?');
+}
+
+try {
+  var d = localStorage.getItem('tournee.v1');
+  row('base', true, 'Données de Tournée',
+      d ? Math.round(d.length / 1024) + ' Ko enregistrés' : 'aucune donnée pour l\u2019instant');
+} catch (e) { row('base', false, 'Données de Tournée', 'illisibles'); }
+
+/* ── Bouton ── */
+var n = 0;
+document.getElementById('tap').addEventListener('click', function () {
+  n++;
+  document.getElementById('tapcount').textContent =
+    n + ' appui' + (n > 1 ? 's' : '') + ' détecté' + (n > 1 ? 's' : '') + '. Les appuis passent bien.';
+  if (n === 1) { R.push('OK  Appui sur bouton : détecté'); refresh(); }
+});
+
+/* ── Réseau ── */
+function testUrl(nom, url, box) {
+  var t0 = Date.now();
+  return fetch(url, { mode: 'no-cors', cache: 'no-store' })
+    .then(function () { row(box, true, nom, 'réponse en ' + (Date.now() - t0) + ' ms'); return true; })
+    .catch(function (e) { row(box, false, nom, 'injoignable — ' + e.message); return false; });
+}
+
+testUrl('Leaflet (unpkg.com)', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', 'net')
+  .then(function () { return testUrl('Tuiles CARTO', 'https://a.basemaps.cartocdn.com/dark_all/5/15/11.png', 'net'); })
+  .then(function () { return testUrl('Tuiles OpenStreetMap', 'https://tile.openstreetmap.org/5/15/11.png', 'net'); })
+  .then(function () { return testUrl('Polices Google', 'https://fonts.googleapis.com/css2?family=Manrope', 'net'); })
+  .then(verdict);
+
+/* ── GPS ── */
+row('geo', 'geolocation' in navigator, 'API de localisation',
+    'geolocation' in navigator ? 'disponible' : 'absente de ce navigateur');
+
+if (navigator.permissions && navigator.permissions.query) {
+  navigator.permissions.query({ name: 'geolocation' }).then(function (p) {
+    row('geo', p.state === 'granted' ? true : p.state === 'denied' ? false : null,
+        'Autorisation', p.state === 'granted' ? 'accordée'
+          : p.state === 'denied' ? 'REFUSÉE — à réactiver dans les réglages du site'
+          : 'pas encore demandée');
+  }).catch(function () {});
+}
+
+document.getElementById('askgeo').addEventListener('click', function () {
+  if (!navigator.geolocation) { row('geo', false, 'Test GPS', 'API absente'); return; }
+  var t0 = Date.now();
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      row('geo', true, 'Position obtenue',
+          'précision ' + Math.round(pos.coords.accuracy) + ' m, en ' + (Date.now() - t0) + ' ms');
+    },
+    function (err) {
+      row('geo', false, 'Position refusée', 'code ' + err.code + ' — ' + err.message);
+    },
+    { enableHighAccuracy: true, timeout: 15000 });
+});
+
+/* ── Cache ── */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function (rs) {
+    row('cache', rs.length > 0 ? null : true, 'Service worker',
+        rs.length ? rs.length + ' enregistré(s) — peut servir une ancienne version' : 'aucun');
+  });
+} else { row('cache', true, 'Service worker', 'non supporté ici'); }
+
+if (window.caches) {
+  caches.keys().then(function (k) {
+    row('cache', k.length ? null : true, 'Caches',
+        k.length ? k.join(', ') : 'vides');
+  });
+} else { row('cache', true, 'Caches', 'non supportés'); }
+
+fetch('index.html?v=' + Date.now(), { cache: 'no-store' })
+  .then(function (r) { return r.text(); })
+  .then(function (t) {
+    var m = t.match(/name="tournee-version" content="([^"]+)"/);
+    row('cache', !!m, 'Version de index.html sur le serveur',
+        m ? 'version ' + m[1] : 'ANCIENNE — pas de numéro de version, le fichier n\u2019a pas été remplacé');
+  })
+  .catch(function (e) { row('cache', null, 'Lecture de index.html', e.message); });
+
+document.getElementById('clear').addEventListener('click', function () {
+  var jobs = [];
+  if ('serviceWorker' in navigator) {
+    jobs.push(navigator.serviceWorker.getRegistrations()
+      .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+  }
+  if (window.caches) {
+    jobs.push(caches.keys().then(function (k) {
+      return Promise.all(k.map(function (x) { return caches.delete(x); }));
+    }));
+  }
+  Promise.all(jobs).then(function () { location.href = 'index.html?frais=' + Date.now(); });
+});
+
+/* ── Verdict ── */
+function verdict() {
+  var ko = R.filter(function (l) { return l.indexOf('KO') === 0; });
+  var v = document.getElementById('verdict');
+  if (!ko.length) {
+    v.className = 'verdict ok';
+    v.textContent = 'Tout répond correctement';
+  } else {
+    v.className = 'verdict ko';
+    v.textContent = ko.length + ' problème' + (ko.length > 1 ? 's' : '') + ' détecté' + (ko.length > 1 ? 's' : '');
+  }
+  refresh();
+}
+
+document.getElementById('copy').addEventListener('click', function () {
+  var t = document.getElementById('dump').textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t)
+      .then(function () { alert('Rapport copié'); })
+      .catch(function () { alert('Copie impossible, fais une capture d\u2019écran'); });
+  } else { alert('Copie impossible, fais une capture d\u2019écran'); }
+});
+
+refresh();
+</script>
+</body>
+</html>
